@@ -1,0 +1,9 @@
+{
+  "id": "obsidian-objects",
+  "name": "Obsidian Objects",
+  "version": "0.1.0",
+  "minAppVersion": "1.7.0",
+  "description": "Capacities-style object-oriented note management. Define object types, attach properties, and link them with an @ mention menu.",
+  "author": "chadrach",
+  "isDesktopOnly": false
+}
