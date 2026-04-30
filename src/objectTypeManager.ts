@@ -433,6 +433,92 @@ export class ObjectTypeManager {
 		return file;
 	}
 
+	/**
+	 * Convert an existing note to a different object type. Three steps:
+	 *   1. Apply the user-supplied frontmatter mapping (rename / delete /
+	 *      keep each existing property).
+	 *   2. Stamp the type-identifier property to the new type's qualified
+	 *      name and fill in any missing target-type properties with their
+	 *      defaults.
+	 *   3. Move the note into the new type's folder. If `targetPath` differs
+	 *      from the file's current path the move runs through the file
+	 *      manager so any existing wikilinks are rewritten automatically.
+	 *
+	 * Caller is responsible for resolving filename conflicts (the modal uses
+	 * `uniquePath` for that) and for confirming destructive actions before
+	 * invoking this method.
+	 */
+	async changeObjectType(
+		file: TFile,
+		newType: ObjectTypeDefinition,
+		options: {
+			propertyMapping: Record<
+				string,
+				"keep" | "delete" | { mapTo: string }
+			>;
+			targetPath: string;
+		}
+	): Promise<TFile> {
+		const newProps = this.getEffectiveProperties(newType);
+		const typeKey = this.data.settings.typePropertyName;
+
+		await this.app.fileManager.processFrontMatter(file, (fm) => {
+			// Snapshot original frontmatter; we'll rebuild from scratch so
+			// the property order in the resulting file matches the new type.
+			const original: Record<string, unknown> = {};
+			for (const key of Object.keys(fm)) {
+				original[key] = fm[key];
+				delete fm[key];
+			}
+
+			for (const [key, value] of Object.entries(original)) {
+				const action = options.propertyMapping[key];
+				if (action === "delete") continue;
+				if (
+					action &&
+					typeof action === "object" &&
+					"mapTo" in action
+				) {
+					fm[action.mapTo] = value;
+					continue;
+				}
+				// "keep" or no explicit action: preserve as-is.
+				fm[key] = value;
+			}
+
+			// Always overwrite the type identifier — that's the whole point.
+			fm[typeKey] = this.getQualifiedName(newType);
+
+			// Fill any new-type property the mapping didn't already populate.
+			for (const prop of newProps) {
+				if (fm[prop.name] === undefined) {
+					fm[prop.name] = propertyInitialValue(prop);
+				}
+			}
+		});
+
+		if (file.path !== options.targetPath) {
+			const lastSlash = options.targetPath.lastIndexOf("/");
+			if (lastSlash > 0) {
+				await ensureFolder(
+					this.app.vault,
+					options.targetPath.slice(0, lastSlash)
+				);
+			}
+			await this.app.fileManager.renameFile(file, options.targetPath);
+		}
+
+		const moved = this.app.vault.getAbstractFileByPath(options.targetPath);
+		if (!(moved instanceof TFile)) {
+			throw new Error(`File missing after move: ${options.targetPath}`);
+		}
+
+		// File→type membership changed but the type list didn't, so don't
+		// persist data; just notify listeners so icons / decorations refresh.
+		for (const l of this.listeners) l();
+		return moved;
+	}
+
 	async rewriteBase(
 		type: ObjectTypeDefinition,
 		mutation?: PropertyMutation

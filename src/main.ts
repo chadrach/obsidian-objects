@@ -12,6 +12,7 @@ import { DEFAULT_DATA, ObjectsPluginData } from "./types";
 import { ObjectTypeManager } from "./objectTypeManager";
 import { AtSuggest } from "./suggest/atSuggest";
 import { ObjectTypeSettingsModal } from "./modals/objectTypeSettingsModal";
+import { ChangeObjectTypeModal } from "./modals/changeObjectTypeModal";
 import { LinkDecorator } from "./linkDecorator";
 import { ObjectsSettingTab } from "./settingTab";
 import { syncDailyNotesType } from "./dailyNotes";
@@ -84,11 +85,20 @@ export default class ObjectsPlugin extends Plugin {
 			})
 		);
 
-		// --- Folder context menu --------------------------------------
+		// --- File / folder context menu -------------------------------
+		// `file-menu` fires for every file context menu Obsidian shows: the
+		// file explorer, internal-link right-clicks, and tab right-clicks
+		// (with `source` distinguishing them, but the same items work for
+		// all three).
 		this.registerEvent(
 			this.app.workspace.on("file-menu", (menu, file) => {
 				if (file instanceof TFolder) {
 					this.addFolderMenuItems(menu, file);
+				} else if (
+					file instanceof TFile &&
+					file.extension === "md"
+				) {
+					this.addFileMenuItems(menu, file);
 				}
 			})
 		);
@@ -190,6 +200,46 @@ export default class ObjectsPlugin extends Plugin {
 					.onClick(() => void this.openBaseFor(type.id));
 			});
 		}
+	}
+
+	/**
+	 * Add a "Change object type" submenu to the context menu for a markdown
+	 * file. Hidden when no object types are defined yet.
+	 *
+	 * The auto-managed Daily Notes type isn't offered as a destination — its
+	 * folder/format come from the core Daily Notes plugin and changing a
+	 * note's type to it would just confuse the integration.
+	 */
+	private addFileMenuItems(menu: Menu, file: TFile): void {
+		const types = this.manager
+			.getTypes()
+			.filter((t) => t.managed !== "daily-notes");
+		if (types.length === 0) return;
+		const currentType = this.manager.getTypeForPath(file.path);
+
+		menu.addItem((item: MenuItem) => {
+			item.setTitle("Change object type").setIcon("layers");
+			const submenu = (
+				item as MenuItem & { setSubmenu?: () => Menu }
+			).setSubmenu?.();
+			if (!submenu) return;
+			for (const type of types) {
+				submenu.addItem((sub: MenuItem) => {
+					sub.setTitle(type.name).setIcon(type.icon || "box");
+					if (currentType?.id === type.id) {
+						sub.setChecked(true);
+					}
+					sub.onClick(() => {
+						new ChangeObjectTypeModal(
+							this.app,
+							this.manager,
+							file,
+							type
+						).open();
+					});
+				});
+			}
+		});
 	}
 
 	private async openBaseFor(typeId: string): Promise<void> {
