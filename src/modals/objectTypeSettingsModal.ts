@@ -417,15 +417,61 @@ export class ObjectTypeSettingsModal extends Modal {
 			const row = container.createDiv({
 				cls: "obsidian-objects-prop-row",
 			});
-			const nameInput = row.createEl("input", {
+			// Wrap name input so we can overlay the collision warning icon.
+			const nameWrap = row.createDiv({
+				cls: "obsidian-objects-prop-row__name-wrap",
+			});
+			const nameInput = nameWrap.createEl("input", {
 				type: "text",
 				cls: "obsidian-objects-prop-row__name",
 			});
 			nameInput.value = prop.name;
 			nameInput.placeholder = "Property name";
+			const collisionIcon = nameWrap.createSpan({
+				cls: "obsidian-objects-prop-collision",
+			});
+			setIcon(collisionIcon, "info");
+
+			const updateCollision = () => {
+				const name = nameInput.value.trim();
+				if (!name) {
+					collisionIcon.removeClass("is-visible");
+					collisionIcon.removeAttribute("aria-label");
+					return;
+				}
+				const conflicts = this.manager
+					.getTypes()
+					.filter((t) => t.id !== draft.existingId)
+					.filter((t) =>
+						this.manager
+							.getEffectiveProperties(t)
+							.some(
+								(p) =>
+									p.name.toLowerCase() ===
+									name.toLowerCase()
+							)
+					);
+				if (conflicts.length > 0) {
+					const typeList = conflicts
+						.map((t) => t.name)
+						.join(", ");
+					collisionIcon.setAttribute(
+						"aria-label",
+						`"${name}" is also defined on: ${typeList}. ` +
+							`Sharing a name means Bases views can display both types' values in the same column.`
+					);
+					collisionIcon.addClass("is-visible");
+				} else {
+					collisionIcon.removeClass("is-visible");
+					collisionIcon.removeAttribute("aria-label");
+				}
+			};
+
 			nameInput.addEventListener("input", () => {
 				prop.name = nameInput.value;
+				updateCollision();
 			});
+			updateCollision();
 
 			const typeSelect = row.createEl("select", {
 				cls: "obsidian-objects-prop-row__type",

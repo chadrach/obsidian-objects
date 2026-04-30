@@ -692,6 +692,19 @@ function readPropertyKey(host: HTMLElement): string | null {
 }
 
 function readBasesColumnName(host: HTMLElement): string | null {
+	// Obsidian's native property-value picker floats at the document level
+	// (appended to body) and carries the column name in data-property-key.
+	// Walk up first, then fall back to a document-level search since the
+	// picker element is often not an ancestor of the input we're listening to.
+	const picker =
+		(host.closest(
+			".suggestion-container.mod-property-value[data-property-key]"
+		) as HTMLElement | null) ??
+		(document.querySelector(
+			".suggestion-container.mod-property-value[data-property-key]"
+		) as HTMLElement | null);
+	if (picker?.dataset.propertyKey) return picker.dataset.propertyKey;
+
 	const cell = host.closest(
 		".bases-rendered-cell, .bases-cell, .bases-td, [data-bases-property], [data-property]"
 	) as HTMLElement | null;

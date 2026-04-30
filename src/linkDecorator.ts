@@ -2,6 +2,7 @@ import {
 	App,
 	MarkdownPostProcessor,
 	MarkdownPostProcessorContext,
+	MarkdownView,
 	TFile,
 	WorkspaceLeaf,
 	setIcon,
@@ -73,6 +74,7 @@ export class LinkDecorator {
 		}
 		this.decorateFileExplorer();
 		this.decorateRenderedLinks();
+		this.decorateTabHeaders();
 	}
 
 	private decorateFileExplorer(): void {
@@ -96,6 +98,16 @@ export class LinkDecorator {
 					type?.icon ?? null,
 					"nav-folder"
 				);
+				// Underline typed folder titles so they're visually distinct.
+				if (type) {
+					(el as HTMLElement).addClass(
+						"obsidian-objects-typed-folder"
+					);
+				} else {
+					(el as HTMLElement).removeClass(
+						"obsidian-objects-typed-folder"
+					);
+				}
 			});
 		// Files
 		container
@@ -113,12 +125,45 @@ export class LinkDecorator {
 	}
 
 	private decorateRenderedLinks(): void {
-		const links = this.app.workspace.containerEl.querySelectorAll(
-			"a.internal-link"
+		const root = this.app.workspace.containerEl;
+		// Reading mode, live-preview body, and any other rendered anchor.
+		// `a[data-href]` catches Obsidian internal links that don't always
+		// carry the `internal-link` class (e.g. Properties editor chips).
+		root.querySelectorAll("a.internal-link, a[data-href]").forEach(
+			(anchor) => {
+				this.decorateAnchor(anchor as HTMLAnchorElement, "");
+			}
 		);
-		links.forEach((anchor) => {
+		// Properties editor values can render as anchors inside
+		// .metadata-property-value or .metadata-content.
+		root.querySelectorAll(
+			".metadata-property-value a, .metadata-content a"
+		).forEach((anchor) => {
 			this.decorateAnchor(anchor as HTMLAnchorElement, "");
 		});
+	}
+
+	/**
+	 * Prepend the object-type icon to the workspace tab header for every open
+	 * markdown file that belongs to a registered type.
+	 */
+	private decorateTabHeaders(): void {
+		for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
+			const view = leaf.view;
+			if (!(view instanceof MarkdownView)) continue;
+			const file = view.file;
+			if (!file) continue;
+			const type = this.manager.getTypeForPath(file.path);
+			const tabHeaderEl = (
+				leaf as unknown as { tabHeaderEl?: HTMLElement }
+			).tabHeaderEl;
+			if (!tabHeaderEl) continue;
+			const titleEl = tabHeaderEl.querySelector(
+				".workspace-tab-header-inner-title"
+			) as HTMLElement | null;
+			if (!titleEl) continue;
+			this.applyIcon(titleEl, type?.icon ?? null, "tab");
+		}
 	}
 
 	private decorateAnchor(
@@ -139,7 +184,7 @@ export class LinkDecorator {
 	private applyIcon(
 		host: HTMLElement,
 		iconName: string | null,
-		variant: "link" | "nav-file" | "nav-folder"
+		variant: "link" | "nav-file" | "nav-folder" | "tab"
 	): void {
 		const existing = host.querySelector(".obsidian-objects-link-icon");
 		if (!iconName) {

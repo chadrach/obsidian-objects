@@ -123,6 +123,37 @@
   align-items: center;
 }
 
+/* Name-input wrapper: allows the collision warning icon to be overlaid */
+.obsidian-objects-prop-row__name-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.obsidian-objects-prop-row__name-wrap .obsidian-objects-prop-row__name {
+  width: 100%;
+  padding-right: 1.6em;
+}
+
+/* Collision warning — ⓘ icon shown when a property name is shared with
+   another type. Revealed via the .is-visible modifier. */
+.obsidian-objects-prop-collision {
+  position: absolute;
+  right: 0.3em;
+  display: none;
+  width: 16px;
+  height: 16px;
+  color: var(--color-orange, var(--text-warning));
+  cursor: help;
+  align-items: center;
+  justify-content: center;
+}
+
+.obsidian-objects-prop-collision.is-visible {
+  display: inline-flex;
+}
+
 .obsidian-objects-prop-row input,
 .obsidian-objects-prop-row select {
   width: 100%;
@@ -214,6 +245,21 @@
 
 .obsidian-objects-link-icon--cm {
   margin-right: 0.15em;
+}
+
+.obsidian-objects-link-icon--tab {
+  width: 14px;
+  height: 14px;
+  margin-right: 0.25em;
+  vertical-align: text-bottom;
+  color: var(--text-accent);
+}
+
+/* Underline typed folder names in the nav pane */
+.nav-folder-title.obsidian-objects-typed-folder .nav-folder-title-content {
+  text-decoration: underline;
+  text-decoration-color: var(--text-accent);
+  text-underline-offset: 2px;
 }
 
 /* Floating mention popup (Properties editor + Bases) */
