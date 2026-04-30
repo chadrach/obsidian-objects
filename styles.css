@@ -228,13 +228,21 @@
 /* Inline link icons */
 .obsidian-objects-link-icon {
   display: inline-flex;
-  width: 14px;
-  height: 14px;
+  width: 1em;
+  height: 1em;
   align-items: center;
   justify-content: center;
-  margin-right: 0.2em;
+  margin-right: 0.25em;
   color: var(--text-accent);
-  vertical-align: text-bottom;
+  /* Slight negative offset matches the optical centre of surrounding text. */
+  vertical-align: -0.15em;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.obsidian-objects-link-icon svg {
+  width: 1em;
+  height: 1em;
 }
 
 .obsidian-objects-link-icon--nav-file {
@@ -253,10 +261,7 @@
 }
 
 .obsidian-objects-link-icon--tab {
-  width: 14px;
-  height: 14px;
-  margin-right: 0.25em;
-  vertical-align: text-bottom;
+  margin-right: 0.3em;
   color: var(--text-accent);
 }
 

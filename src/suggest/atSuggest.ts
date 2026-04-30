@@ -12,7 +12,7 @@ import {
 import { ObjectTypeDefinition } from "../types";
 import { ObjectTypeManager } from "../objectTypeManager";
 import { formatDate, parseNaturalDate } from "../dateParser";
-import { filenameWithoutExtension, joinPath } from "../utils";
+import { filenameWithoutExtension, joinPath, uniquePath } from "../utils";
 
 type Suggestion =
 	| {
@@ -28,6 +28,10 @@ type Suggestion =
 	| {
 			kind: "create";
 			type: ObjectTypeDefinition;
+			title: string;
+	  }
+	| {
+			kind: "create-untyped";
 			title: string;
 	  }
 	| {
@@ -174,7 +178,13 @@ export class AtSuggest extends EditorSuggest<Suggestion> {
 		const scopeType: ObjectTypeDefinition | null = filter
 			? this.manager.getTypeById(filter.typeId) ?? null
 			: implicitType ?? null;
-		const notes = findMatchingNotes(this.app, query, scopeType, 20);
+		const notes = findMatchingNotes(
+			this.app,
+			this.manager,
+			query,
+			scopeType,
+			20
+		);
 		for (const n of notes) {
 			suggestions.push({
 				kind: "note",
@@ -184,18 +194,29 @@ export class AtSuggest extends EditorSuggest<Suggestion> {
 		}
 
 		// --- Create-new row ---------------------------------------------
-		if (scopeType && query.length > 0) {
+		if (query.length > 0) {
 			const already = notes.some(
 				(n) =>
 					filenameWithoutExtension(n.file.name).toLowerCase() ===
 					query.toLowerCase()
 			);
 			if (!already) {
-				suggestions.push({
-					kind: "create",
-					type: scopeType,
-					title: query,
-				});
+				if (scopeType) {
+					suggestions.push({
+						kind: "create",
+						type: scopeType,
+						title: query,
+					});
+				} else {
+					// No type chosen — offer to create a plain note in the
+					// vault's default location (Files & Links → New note
+					// location). Without this, the dropdown would close on
+					// any unknown name and lock the user out of creation.
+					suggestions.push({
+						kind: "create-untyped",
+						title: query,
+					});
+				}
 			}
 		}
 
@@ -239,6 +260,12 @@ export class AtSuggest extends EditorSuggest<Suggestion> {
 				subEl.setText(`New ${suggestion.type.name}`);
 				break;
 			}
+			case "create-untyped": {
+				setIcon(iconEl, "plus");
+				titleEl.setText(`Create “${suggestion.title}”`);
+				subEl.setText("New note (default location)");
+				break;
+			}
 			case "daily-note": {
 				setIcon(iconEl, suggestion.dailyType?.icon ?? "calendar");
 				const name = formatDate(suggestion.date, suggestion.format);
@@ -269,6 +296,9 @@ export class AtSuggest extends EditorSuggest<Suggestion> {
 				return;
 			case "create":
 				void this.createAndInsert(context, suggestion);
+				return;
+			case "create-untyped":
+				void this.createUntypedAndInsert(context, suggestion);
 				return;
 			case "daily-note":
 				void this.insertDailyNote(context, suggestion);
@@ -356,6 +386,35 @@ export class AtSuggest extends EditorSuggest<Suggestion> {
 		}
 	}
 
+	private async createUntypedAndInsert(
+		context: EditorSuggestContext,
+		suggestion: Extract<Suggestion, { kind: "create-untyped" }>
+	): Promise<void> {
+		try {
+			// `getNewFileParent` honours the user's "Default location for new
+			// notes" setting (Files & Links). Falls back to the vault root
+			// when set to "current" with no active file.
+			const sourcePath = context.file?.path ?? "";
+			const folder = this.app.fileManager.getNewFileParent(sourcePath);
+			const folderPath = folder.path === "/" ? "" : folder.path;
+			const path = uniquePath(
+				this.app.vault,
+				folderPath,
+				suggestion.title
+			);
+			const file = await this.app.vault.create(path, "");
+			this.insertWikilink(
+				context,
+				filenameWithoutExtension(file.name),
+				file
+			);
+			new Notice(`Created note: ${filenameWithoutExtension(file.name)}`);
+		} catch (err) {
+			console.error(err);
+			new Notice(`Could not create note: ${err}`);
+		}
+	}
+
 	private async insertDailyNote(
 		context: EditorSuggestContext,
 		suggestion: Extract<Suggestion, { kind: "daily-note" }>
@@ -383,6 +442,7 @@ export class AtSuggest extends EditorSuggest<Suggestion> {
 
 function findMatchingNotes(
 	app: App,
+	manager: ObjectTypeManager,
 	query: string,
 	scope: ObjectTypeDefinition | null,
 	limit: number
@@ -394,7 +454,12 @@ function findMatchingNotes(
 		if (scope && !file.path.startsWith(scope.folderPath + "/")) continue;
 		const name = filenameWithoutExtension(file.name).toLowerCase();
 		if (qLower.length > 0 && !name.includes(qLower)) continue;
-		results.push({ file, type: scope ?? undefined });
+		// When unscoped, look up each match's actual type so the dropdown
+		// shows the correct icon (Person → user icon, etc.) instead of the
+		// generic file icon.
+		const fileType =
+			scope ?? manager.getTypeForPath(file.path) ?? undefined;
+		results.push({ file, type: fileType });
 		if (results.length >= limit) break;
 	}
 	return results;

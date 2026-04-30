@@ -2,7 +2,7 @@ import { App, Notice, TFile, setIcon } from "obsidian";
 import { ObjectTypeDefinition } from "./types";
 import { ObjectTypeManager } from "./objectTypeManager";
 import { formatDate, parseNaturalDate } from "./dateParser";
-import { filenameWithoutExtension, joinPath } from "./utils";
+import { filenameWithoutExtension, joinPath, uniquePath } from "./utils";
 
 /**
  * `EditorSuggest` only fires inside CodeMirror-managed editors. The
@@ -40,6 +40,10 @@ type Suggestion =
 	| {
 			kind: "create";
 			type: ObjectTypeDefinition;
+			title: string;
+	  }
+	| {
+			kind: "create-untyped";
 			title: string;
 	  }
 	| {
@@ -318,22 +322,37 @@ export class MentionPopup {
 		const scope: ObjectTypeDefinition | null = activeFilter
 			? this.manager.getTypeById(activeFilter.typeId) ?? null
 			: implicitType ?? null;
-		const notes = findMatchingNotes(this.app, query, scope, 20);
+		const notes = findMatchingNotes(
+			this.app,
+			this.manager,
+			query,
+			scope,
+			20
+		);
 		for (const n of notes) {
 			suggestions.push({ kind: "note", file: n.file, type: n.type });
 		}
-		if (scope && query.length > 0) {
+		if (query.length > 0) {
 			const exists = notes.some(
 				(n) =>
 					filenameWithoutExtension(n.file.name).toLowerCase() ===
 					query.toLowerCase()
 			);
 			if (!exists) {
-				suggestions.push({
-					kind: "create",
-					type: scope,
-					title: query,
-				});
+				if (scope) {
+					suggestions.push({
+						kind: "create",
+						type: scope,
+						title: query,
+					});
+				} else {
+					// Untyped creation in the vault's default new-note location
+					// — keeps the @ menu useful when no object type is active.
+					suggestions.push({
+						kind: "create-untyped",
+						title: query,
+					});
+				}
 			}
 		}
 
@@ -400,6 +419,11 @@ export class MentionPopup {
 					title.setText(`Create “${suggestion.title}”`);
 					sub.setText(`New ${suggestion.type.name}`);
 					break;
+				case "create-untyped":
+					setIcon(iconEl, "plus");
+					title.setText(`Create “${suggestion.title}”`);
+					sub.setText("New note (default location)");
+					break;
 				case "daily-note":
 					setIcon(
 						iconEl,
@@ -461,6 +485,31 @@ export class MentionPopup {
 						`Created ${suggestion.type.name}: ${filenameWithoutExtension(
 							file.name
 						)}`
+					);
+				} catch (err) {
+					new Notice(`Could not create note: ${err}`);
+				}
+				return;
+			case "create-untyped":
+				try {
+					const sourcePath =
+						this.app.workspace.getActiveFile()?.path ?? "";
+					const folder =
+						this.app.fileManager.getNewFileParent(sourcePath);
+					const folderPath =
+						folder.path === "/" ? "" : folder.path;
+					const path = uniquePath(
+						this.app.vault,
+						folderPath,
+						suggestion.title
+					);
+					const file = await this.app.vault.create(path, "");
+					this.insertWikilink(
+						filenameWithoutExtension(file.name),
+						file
+					);
+					new Notice(
+						`Created note: ${filenameWithoutExtension(file.name)}`
 					);
 				} catch (err) {
 					new Notice(`Could not create note: ${err}`);
@@ -749,6 +798,7 @@ function findLinkedTypeForPropertyName(
 
 function findMatchingNotes(
 	app: App,
+	manager: ObjectTypeManager,
 	query: string,
 	scope: ObjectTypeDefinition | null,
 	limit: number
@@ -760,7 +810,11 @@ function findMatchingNotes(
 		if (scope && !file.path.startsWith(scope.folderPath + "/")) continue;
 		const name = filenameWithoutExtension(file.name).toLowerCase();
 		if (qLower.length > 0 && !name.includes(qLower)) continue;
-		out.push({ file, type: scope ?? undefined });
+		// Resolve the file's actual type (if any) so unscoped results show
+		// the correct object icon rather than the generic file glyph.
+		const fileType =
+			scope ?? manager.getTypeForPath(file.path) ?? undefined;
+		out.push({ file, type: fileType });
 		if (out.length >= limit) break;
 	}
 	return out;
