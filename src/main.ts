@@ -5,7 +5,9 @@ import {
 	TFile,
 	TFolder,
 	WorkspaceLeaf,
+	MarkdownView,
 } from "obsidian";
+import { EditorView } from "@codemirror/view";
 import { DEFAULT_DATA, ObjectsPluginData } from "./types";
 import { ObjectTypeManager } from "./objectTypeManager";
 import { AtSuggest } from "./suggest/atSuggest";
@@ -13,15 +15,22 @@ import { ObjectTypeSettingsModal } from "./modals/objectTypeSettingsModal";
 import { LinkDecorator } from "./linkDecorator";
 import { ObjectsSettingTab } from "./settingTab";
 import { syncDailyNotesType } from "./dailyNotes";
+import { buildLinkIconExtension } from "./cm/linkIconExtension";
+import { MentionPopup } from "./mentionPopup";
 
 /**
  * Entry point for the Obsidian Objects plugin.
  *
  * Responsibilities:
  *   - Load/save persisted data via `ObjectTypeManager`.
- *   - Register the `@` editor suggester.
+ *   - Register editor hooks: the `@` editor suggester for CodeMirror, a CM6
+ *     view plugin for live-preview link icons, and a document-level
+ *     `MentionPopup` that handles the Properties editor and Bases cells.
  *   - Add commands, context menus, and the settings tab.
- *   - Wire the link-icon decorator to the workspace.
+ *   - Wire the link-icon decorator to the workspace (file-explorer, reading
+ *     mode rendered links).
+ *   - Intercept clicks on typed folders so the .base file opens instead of
+ *     the folder expanding.
  *   - Keep the Daily Notes managed type in sync with the user's
  *     `daily-notes` core plugin configuration.
  */
@@ -29,6 +38,7 @@ export default class ObjectsPlugin extends Plugin {
 	manager!: ObjectTypeManager;
 	linkDecorator: LinkDecorator | null = null;
 	private suggest: AtSuggest | null = null;
+	private mentionPopup: MentionPopup | null = null;
 
 	async onload(): Promise<void> {
 		const loaded = (await this.loadData()) as ObjectsPluginData | null;
@@ -38,11 +48,23 @@ export default class ObjectsPlugin extends Plugin {
 			(data) => this.saveData(data)
 		);
 
-		// --- Editor suggester ------------------------------------------
+		// --- Editor suggester (CodeMirror) -----------------------------
 		this.suggest = new AtSuggest(this.app, this.manager);
 		this.registerEditorSuggest(this.suggest);
 
-		// --- Link + folder icon decorations ---------------------------
+		// --- CodeMirror live-preview icon extension --------------------
+		this.registerEditorExtension(
+			buildLinkIconExtension(this.app, this.manager, (view) =>
+				this.findSourcePathForView(view)
+			)
+		);
+
+		// --- Mention popup (Properties editor, Bases cells) ------------
+		this.mentionPopup = new MentionPopup(this.app, this.manager);
+		this.mentionPopup.attach();
+		this.register(() => this.mentionPopup?.detach());
+
+		// --- Reading-mode + nav-pane icon decorations ------------------
 		this.linkDecorator = new LinkDecorator(this.app, this.manager);
 		this.registerMarkdownPostProcessor(
 			this.linkDecorator.readingModePostProcessor
@@ -60,6 +82,7 @@ export default class ObjectsPlugin extends Plugin {
 		this.register(
 			this.manager.onChange(() => {
 				this.linkDecorator?.decorateAll();
+				this.refreshOpenEditorViews();
 			})
 		);
 
@@ -73,8 +96,14 @@ export default class ObjectsPlugin extends Plugin {
 		);
 
 		// --- Folder click → base file ---------------------------------
-		this.registerDomEvent(document, "click", (evt) =>
-			this.handleFolderClick(evt)
+		// Obsidian's file-explorer toggles folder collapse on `mousedown` in
+		// the bubble phase, so to override it we have to intercept the same
+		// event during capture and stop propagation before its handler runs.
+		this.registerDomEvent(
+			document,
+			"mousedown",
+			(evt) => this.handleFolderClick(evt),
+			{ capture: true }
 		);
 
 		// --- Commands -------------------------------------------------
@@ -110,6 +139,7 @@ export default class ObjectsPlugin extends Plugin {
 
 	onunload(): void {
 		this.linkDecorator?.disconnect();
+		this.mentionPopup?.detach();
 	}
 
 	// ---------- public API used by sub-components ----------
@@ -163,11 +193,13 @@ export default class ObjectsPlugin extends Plugin {
 	}
 
 	/**
-	 * Intercepts clicks on typed folders in the file explorer and opens the
-	 * associated .base file instead of expanding the folder, mimicking the
-	 * Folder Notes plugin's behavior.
+	 * Intercepts mousedown on typed folder rows in the file explorer and
+	 * opens the associated .base file instead of expanding the folder. The
+	 * collapse chevron is left alone so the user can still expand/collapse
+	 * the tree when they want to.
 	 */
 	private handleFolderClick(evt: MouseEvent): void {
+		if (evt.button !== 0) return;
 		if (!this.manager.getSettings().folderClickOpensBase) return;
 		const target = evt.target as HTMLElement | null;
 		if (!target) return;
@@ -176,9 +208,7 @@ export default class ObjectsPlugin extends Plugin {
 		) as HTMLElement | null;
 		if (!folderTitle) return;
 		// Let the user still use the collapse chevron.
-		if ((evt.target as HTMLElement).closest(".nav-folder-collapse-indicator")) {
-			return;
-		}
+		if (target.closest(".nav-folder-collapse-indicator")) return;
 		const path = folderTitle.dataset.path;
 		if (!path) return;
 		const type = this.manager.getTypeByFolder(path);
@@ -187,7 +217,31 @@ export default class ObjectsPlugin extends Plugin {
 		if (!(base instanceof TFile)) return;
 		evt.preventDefault();
 		evt.stopPropagation();
+		evt.stopImmediatePropagation();
 		void this.app.workspace.getLeaf().openFile(base);
+	}
+
+	/**
+	 * Force a re-decoration in every open markdown editor — used after the
+	 * type list changes so existing live-preview viewports pick up new icons
+	 * without waiting for the next viewport scroll.
+	 */
+	private refreshOpenEditorViews(): void {
+		for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
+			const view = leaf.view;
+			if (!(view instanceof MarkdownView)) continue;
+			const cm = (view.editor as unknown as { cm?: EditorView }).cm;
+			cm?.dispatch({});
+		}
+	}
+
+	private findSourcePathForView(view: EditorView): string | null {
+		// Walk up the workspace and find the leaf that owns this contentDOM.
+		const parent = view.contentDOM.closest(
+			".workspace-leaf-content"
+		) as HTMLElement | null;
+		const path = parent?.getAttribute("data-path");
+		return path ?? null;
 	}
 
 	/** Unused convenience, kept for external callers / future code. */

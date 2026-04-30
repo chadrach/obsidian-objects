@@ -187,18 +187,105 @@ export class ObjectTypeManager {
 		if (patch.properties !== undefined) type.properties = patch.properties;
 		type.updatedAt = Date.now();
 
+		let mutation: PropertyMutation | undefined;
 		if (patch.properties !== undefined) {
+			mutation = computeMutation(prevProperties, type.properties);
 			await this.cascadePropertyChanges(
 				type,
-				prevProperties,
-				type.properties,
+				mutation,
 				options.removeDeletedFromNotes ?? false
 			);
 		}
 
+		await this.rewriteBase(type, mutation);
+		await this.save();
+		return type;
+	}
+
+	/**
+	 * Relocate the folder backing a type. The folder and every nested file
+	 * (including the .base file) are moved on disk; the type's `folderPath`
+	 * and `basePath` are rewritten accordingly.
+	 *
+	 * Use case: the user picked a different "Object Location" in the modal,
+	 * either pointing the type at a new folder name or moving it under a
+	 * different parent. The caller is expected to have shown a confirmation
+	 * dialog with the affected file count first (see `getMoveImpact`).
+	 */
+	async moveType(
+		id: string,
+		newFolderPath: string
+	): Promise<ObjectTypeDefinition> {
+		const type = this.getTypeById(id);
+		if (!type) throw new Error(`Unknown type id ${id}`);
+		const target = normalizePath(newFolderPath);
+		if (target === type.folderPath) return type;
+
+		const folder = this.app.vault.getAbstractFileByPath(type.folderPath);
+		const targetExisting = this.app.vault.getAbstractFileByPath(target);
+
+		if (folder instanceof TFolder) {
+			if (targetExisting && !(targetExisting instanceof TFolder)) {
+				throw new Error(
+					`Cannot move ${type.folderPath} to ${target}: a file with that name already exists.`
+				);
+			}
+			if (!targetExisting) {
+				// Ensure parent exists (vault.rename will create the leaf).
+				const parent = target.includes("/")
+					? target.slice(0, target.lastIndexOf("/"))
+					: "";
+				if (parent) await ensureFolder(this.app.vault, parent);
+				await this.app.fileManager.renameFile(folder, target);
+			} else {
+				// Target folder already exists — merge: move each child in.
+				await mergeFolderInto(this.app, folder, targetExisting as TFolder);
+			}
+		} else {
+			// Source folder doesn't exist (broken reference). Just create the
+			// target so subsequent .base writes succeed.
+			await ensureFolder(this.app.vault, target);
+		}
+
+		const oldBasePath = type.basePath;
+		type.folderPath = target;
+		type.basePath = basePathFor(target, type.pluralName);
+		type.updatedAt = Date.now();
+
+		// If the .base file moved with the folder rename it'll have followed
+		// to <target>/<old-name>.base. Find it and rename to the canonical
+		// `<plural>.base` if it doesn't already match.
+		await reconcileBaseFilePath(this.app, type, oldBasePath);
+
 		await this.rewriteBase(type);
 		await this.save();
 		return type;
+	}
+
+	/** Files affected by a hypothetical folder move. */
+	getMoveImpact(typeId: string): {
+		fileCount: number;
+		subfolderCount: number;
+	} {
+		const type = this.getTypeById(typeId);
+		if (!type) return { fileCount: 0, subfolderCount: 0 };
+		const folder = this.app.vault.getAbstractFileByPath(type.folderPath);
+		if (!(folder instanceof TFolder)) {
+			return { fileCount: 0, subfolderCount: 0 };
+		}
+		let fileCount = 0;
+		let subfolderCount = 0;
+		const walk = (f: TFolder): void => {
+			for (const child of f.children) {
+				if (child instanceof TFile) fileCount += 1;
+				else if (child instanceof TFolder) {
+					subfolderCount += 1;
+					walk(child);
+				}
+			}
+		};
+		walk(folder);
+		return { fileCount, subfolderCount };
 	}
 
 	/**
@@ -278,21 +365,10 @@ export class ObjectTypeManager {
 
 	private async cascadePropertyChanges(
 		type: ObjectTypeDefinition,
-		prev: ObjectProperty[],
-		next: ObjectProperty[],
+		mutation: PropertyMutation,
 		removeDeletedFromNotes: boolean
 	): Promise<void> {
-		const prevById = new Map(prev.map((p) => [p.id, p]));
-		const nextById = new Map(next.map((p) => [p.id, p]));
-		const added = next.filter((p) => !prevById.has(p.id));
-		const removed = prev.filter((p) => !nextById.has(p.id));
-		const renamed = next
-			.filter((p) => {
-				const old = prevById.get(p.id);
-				return old && old.name !== p.name;
-			})
-			.map((p) => ({ from: prevById.get(p.id)!.name, to: p.name }));
-
+		const { added, removed, renamed } = mutation;
 		if (
 			added.length === 0 &&
 			removed.length === 0 &&
@@ -357,9 +433,12 @@ export class ObjectTypeManager {
 		return file;
 	}
 
-	async rewriteBase(type: ObjectTypeDefinition): Promise<void> {
+	async rewriteBase(
+		type: ObjectTypeDefinition,
+		mutation?: PropertyMutation
+	): Promise<void> {
 		try {
-			await writeBaseFile(this.app, type, this);
+			await writeBaseFile(this.app, type, this, mutation);
 		} catch (err) {
 			console.warn("Failed to write base file", err);
 		}
@@ -367,27 +446,37 @@ export class ObjectTypeManager {
 
 	// ----- diagnostics / broken references -----
 
-	getBrokenReferences(): Array<{
-		type: ObjectTypeDefinition;
-		missing: "folder" | "base";
-	}> {
-		const out: Array<{
-			type: ObjectTypeDefinition;
-			missing: "folder" | "base";
-		}> = [];
+	getBrokenReferences(): Array<BrokenReference> {
+		const out: BrokenReference[] = [];
 		for (const t of this.data.types) {
 			const folder = this.app.vault.getAbstractFileByPath(
 				t.folderPath
 			);
 			if (!(folder instanceof TFolder)) {
-				out.push({ type: t, missing: "folder" });
+				out.push({
+					type: t,
+					missing: "folder",
+					expectedPath: t.folderPath,
+					detail: `Folder "${t.folderPath}" no longer exists. The type's notes can't be located until you point it at a new folder or recreate the original.`,
+				});
 			}
 			const base = this.app.vault.getAbstractFileByPath(t.basePath);
 			if (!(base instanceof TFile)) {
-				out.push({ type: t, missing: "base" });
+				out.push({
+					type: t,
+					missing: "base",
+					expectedPath: t.basePath,
+					detail: `Overview base file "${t.basePath}" is missing. It will be re-generated automatically the next time you save changes to this type.`,
+				});
 			}
 		}
 		return out;
+	}
+
+	getBrokenReferencesForType(typeId: string): BrokenReference[] {
+		return this.getBrokenReferences().filter(
+			(b) => b.type.id === typeId
+		);
 	}
 
 	/** Repair a broken reference by pointing the type at a new folder/base. */
@@ -415,6 +504,80 @@ export class ObjectTypeManager {
 	private async save(): Promise<void> {
 		await this.persist(this.data);
 		for (const l of this.listeners) l();
+	}
+}
+
+export interface PropertyMutation {
+	added: ObjectProperty[];
+	removed: { id: string; name: string }[];
+	renamed: { id: string; from: string; to: string }[];
+}
+
+export interface BrokenReference {
+	type: ObjectTypeDefinition;
+	missing: "folder" | "base";
+	expectedPath: string;
+	detail: string;
+}
+
+function computeMutation(
+	prev: ObjectProperty[],
+	next: ObjectProperty[]
+): PropertyMutation {
+	const prevById = new Map(prev.map((p) => [p.id, p]));
+	const nextById = new Map(next.map((p) => [p.id, p]));
+	return {
+		added: next.filter((p) => !prevById.has(p.id)),
+		removed: prev
+			.filter((p) => !nextById.has(p.id))
+			.map((p) => ({ id: p.id, name: p.name })),
+		renamed: next
+			.filter((p) => {
+				const old = prevById.get(p.id);
+				return old && old.name !== p.name;
+			})
+			.map((p) => ({
+				id: p.id,
+				from: prevById.get(p.id)!.name,
+				to: p.name,
+			})),
+	};
+}
+
+async function mergeFolderInto(
+	app: App,
+	source: TFolder,
+	target: TFolder
+): Promise<void> {
+	for (const child of [...source.children]) {
+		const dest = `${target.path}/${child.name}`;
+		await app.fileManager.renameFile(child, dest);
+	}
+	const remaining = source.children.length;
+	if (remaining === 0) {
+		await app.fileManager.trashFile(source);
+	}
+}
+
+async function reconcileBaseFilePath(
+	app: App,
+	type: ObjectTypeDefinition,
+	previousBasePath: string
+): Promise<void> {
+	const wantedPath = type.basePath;
+	if (previousBasePath === wantedPath) return;
+	// `<previous folder>/<filename>` will have been moved with the folder
+	// rename, so look for the original filename inside the new folder.
+	const oldName = previousBasePath.split("/").pop();
+	if (!oldName) return;
+	const movedPath = `${type.folderPath}/${oldName}`;
+	const candidate = app.vault.getAbstractFileByPath(movedPath);
+	if (candidate instanceof TFile && movedPath !== wantedPath) {
+		try {
+			await app.fileManager.renameFile(candidate, wantedPath);
+		} catch (err) {
+			console.warn("Could not rename .base file after folder move", err);
+		}
 	}
 }
 

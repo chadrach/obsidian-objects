@@ -4,6 +4,7 @@ import {
 	Modal,
 	Notice,
 	Setting,
+	TFolder,
 	setIcon,
 } from "obsidian";
 import {
@@ -14,6 +15,7 @@ import {
 } from "../types";
 import { ObjectTypeManager } from "../objectTypeManager";
 import { confirmAction } from "./confirmModal";
+import { FolderPickerModal } from "../folderPicker";
 import { joinPath, safeFolderName } from "../utils";
 
 const PROPERTY_TYPES: Array<{ value: PropertyType; label: string }> = [
@@ -30,11 +32,19 @@ const PROPERTY_TYPES: Array<{ value: PropertyType; label: string }> = [
 /**
  * The "Object Type Settings" modal — the main configuration surface.
  *
- * Has two screens, switched via `screen`:
- *   - "list": an overview of every defined type, with buttons to create,
- *     edit, delete, or repair broken references.
+ * Two screens, switched via `screen`:
+ *   - "list": an overview of every defined type, with broken-reference
+ *     warnings calling out exactly what's wrong and per-type buttons.
  *   - "edit": the editor for a single type. The caller can jump straight
  *     into this screen by passing an initial type or a folder path.
+ *
+ * "Object Location" semantics:
+ *   - When *creating* a new type, the user can pick an existing folder to
+ *     adopt or type a new folder name to create. We confirm folder creation.
+ *   - When *editing* an existing type, the picker triggers a vault move:
+ *     the folder, every nested file and the .base file are renamed in
+ *     place. The user is shown the impact (file/subfolder counts) before
+ *     committing.
  */
 export class ObjectTypeSettingsModal extends Modal {
 	private screen: "list" | "edit" = "list";
@@ -84,14 +94,42 @@ export class ObjectTypeSettingsModal extends Modal {
 
 	private renderList(): void {
 		this.titleEl.setText("Object Types");
+
 		const broken = this.manager.getBrokenReferences();
 		if (broken.length > 0) {
 			const banner = this.contentEl.createDiv({
 				cls: "obsidian-objects-banner",
 			});
-			banner.createSpan({
-				text: `${broken.length} object type reference(s) are broken. Edit the affected types to repair.`,
+			banner.createDiv({
+				cls: "obsidian-objects-banner__title",
+				text: `${broken.length} broken reference${
+					broken.length === 1 ? "" : "s"
+				}`,
 			});
+			const list = banner.createEl("ul", {
+				cls: "obsidian-objects-banner__list",
+			});
+			for (const issue of broken) {
+				const li = list.createEl("li");
+				const name = this.manager.getQualifiedName(issue.type);
+				li.createEl("strong", { text: `${name}: ` });
+				li.appendText(
+					issue.missing === "folder"
+						? `folder "${issue.expectedPath}" is missing.`
+						: `overview file "${issue.expectedPath}" is missing.`
+				);
+				const fix = li.createSpan();
+				fix.appendText(" ");
+				fix.createEl("a", {
+					text: "Open settings",
+					href: "#",
+				}).addEventListener("click", (evt) => {
+					evt.preventDefault();
+					this.draft = draftFromType(issue.type);
+					this.screen = "edit";
+					this.render();
+				});
+			}
 		}
 
 		const list = this.contentEl.createDiv({
@@ -105,7 +143,10 @@ export class ObjectTypeSettingsModal extends Modal {
 			});
 		}
 		for (const type of types) {
+			const issues =
+				this.manager.getBrokenReferencesForType(type.id);
 			const row = list.createDiv({ cls: "obsidian-objects-type-row" });
+			if (issues.length > 0) row.addClass("has-issue");
 			const icon = row.createSpan({
 				cls: "obsidian-objects-type-row__icon",
 			});
@@ -123,6 +164,20 @@ export class ObjectTypeSettingsModal extends Modal {
 					type.properties.length === 1 ? "y" : "ies"
 				}`,
 			});
+			if (issues.length > 0) {
+				const issueEl = text.createDiv({
+					cls: "obsidian-objects-type-row__issue",
+				});
+				issueEl.setText(
+					issues
+						.map((i) =>
+							i.missing === "folder"
+								? `Folder missing: ${i.expectedPath}`
+								: `Base file missing: ${i.expectedPath}`
+						)
+						.join(" · ")
+				);
+			}
 			const actions = row.createDiv({
 				cls: "obsidian-objects-type-row__actions",
 			});
@@ -180,6 +235,32 @@ export class ObjectTypeSettingsModal extends Modal {
 			draft.existingId ? `Edit ${draft.name || "object type"}` : "New object type"
 		);
 
+		// Per-type broken-reference banner.
+		if (draft.existingId) {
+			const issues = this.manager.getBrokenReferencesForType(
+				draft.existingId
+			);
+			if (issues.length > 0) {
+				const banner = this.contentEl.createDiv({
+					cls: "obsidian-objects-banner",
+				});
+				banner.createDiv({
+					cls: "obsidian-objects-banner__title",
+					text: "This type has broken references",
+				});
+				const list = banner.createEl("ul", {
+					cls: "obsidian-objects-banner__list",
+				});
+				for (const issue of issues) {
+					list.createEl("li", { text: issue.detail });
+				}
+				const fix = banner.createDiv();
+				new ButtonComponent(fix)
+					.setButtonText("Pick replacement folder…")
+					.onClick(() => this.openFolderPicker(draft));
+			}
+		}
+
 		new Setting(this.contentEl)
 			.setName("Type name")
 			.setDesc("Singular, displayed in menus. e.g. \"Person\".")
@@ -204,19 +285,36 @@ export class ObjectTypeSettingsModal extends Modal {
 					})
 			);
 
-		new Setting(this.contentEl)
-			.setName("Folder path")
+		const locationSetting = new Setting(this.contentEl)
+			.setName("Object Location")
 			.setDesc(
-				"Vault-relative folder holding notes of this type. Leave blank to use the plural name."
-			)
-			.addText((t) =>
-				t
-					.setValue(draft.folderPath)
-					.setPlaceholder("People")
-					.onChange((v) => {
-						draft.folderPath = v;
-					})
+				draft.existingId
+					? "Vault folder containing notes of this type. Changing this will move the folder and every nested note."
+					: "Vault folder for new notes of this type. Pick an existing folder or create a new one below."
 			);
+		const locationDisplay = locationSetting.descEl.createDiv({
+			cls: "obsidian-objects-location-current",
+			text: draft.folderPath
+				? `Current: ${draft.folderPath}`
+				: "Not set yet — using the plural name.",
+		});
+		locationSetting.addButton((b) =>
+			b
+				.setButtonText("Pick folder…")
+				.onClick(() => this.openFolderPicker(draft, locationDisplay))
+		);
+		locationSetting.addButton((b) =>
+			b.setButtonText("New folder…").onClick(async () => {
+				const result = await promptForFolderName(
+					this.app,
+					draft.folderPath
+				);
+				if (result === null) return;
+				draft.folderPath = result;
+				draft.folderPathDirty = true;
+				locationDisplay.setText(`Current: ${result}`);
+			})
+		);
 
 		new Setting(this.contentEl)
 			.setName("Icon")
@@ -267,6 +365,35 @@ export class ObjectTypeSettingsModal extends Modal {
 			.setButtonText("Save")
 			.setCta()
 			.onClick(() => void this.handleSave());
+	}
+
+	private openFolderPicker(
+		draft: TypeDraft,
+		display?: HTMLElement
+	): void {
+		new FolderPickerModal(
+			this.app,
+			(folder) => {
+				draft.folderPath = folder.path === "" ? "/" : folder.path;
+				draft.folderPathDirty = true;
+				if (display) {
+					display.setText(`Current: ${draft.folderPath}`);
+				}
+			},
+			{
+				title: "Select Object Location…",
+				filter: (f: TFolder) => {
+					// Don't let a sub-type live above its parent in the tree.
+					if (!draft.parentId) return true;
+					const parent = this.manager.getTypeById(draft.parentId);
+					if (!parent) return true;
+					return (
+						f.path === parent.folderPath ||
+						f.path.startsWith(parent.folderPath + "/")
+					);
+				},
+			}
+		).open();
 	}
 
 	private renderProperties(draft: TypeDraft, container: HTMLElement): void {
@@ -407,6 +534,32 @@ export class ObjectTypeSettingsModal extends Modal {
 		}
 
 		if (draft.existingId) {
+			// Folder relocation must be confirmed first so we don't surprise
+			// the user by moving dozens of files behind a property change.
+			const type = this.manager.getTypeById(draft.existingId);
+			const folderChanged =
+				draft.folderPathDirty &&
+				type &&
+				folderPath !== type.folderPath;
+			if (folderChanged) {
+				const impact = this.manager.getMoveImpact(draft.existingId);
+				const choice = await confirmAction(this.app, {
+					title: "Move object folder?",
+					body: `Move "${type!.folderPath}" to "${folderPath}"? ${impact.fileCount} file(s) and ${impact.subfolderCount} subfolder(s) will move with it.`,
+					confirmText: "Move",
+				});
+				if (choice !== "confirm") return;
+				try {
+					await this.manager.moveType(
+						draft.existingId,
+						folderPath
+					);
+				} catch (err) {
+					new Notice(`Move failed: ${err}`);
+					return;
+				}
+			}
+
 			const preview = this.manager.previewPropertyChange(
 				draft.existingId,
 				cleaned
@@ -494,6 +647,8 @@ interface TypeDraft {
 	icon: string;
 	parentId: string | null;
 	properties: ObjectProperty[];
+	/** True once the user has explicitly chosen a new location. */
+	folderPathDirty?: boolean;
 }
 
 function blankDraft(folderPath = ""): TypeDraft {
@@ -517,4 +672,54 @@ function draftFromType(type: ObjectTypeDefinition): TypeDraft {
 		parentId: type.parentId ?? null,
 		properties: type.properties.map((p) => ({ ...p })),
 	};
+}
+
+/**
+ * Tiny modal that asks for a folder path string. Used when the user wants
+ * to *create* (rather than adopt) a folder. Returns null if cancelled.
+ */
+function promptForFolderName(
+	app: App,
+	defaultValue: string
+): Promise<string | null> {
+	return new Promise((resolve) => {
+		const modal = new (class extends Modal {
+			private value = defaultValue;
+			private resolved = false;
+			onOpen(): void {
+				this.titleEl.setText("New folder path");
+				new Setting(this.contentEl)
+					.setName("Vault-relative path")
+					.addText((t) =>
+						t
+							.setValue(this.value)
+							.setPlaceholder("People")
+							.onChange((v) => {
+								this.value = v;
+							})
+					);
+				new Setting(this.contentEl)
+					.addButton((b) =>
+						b
+							.setButtonText("Cancel")
+							.onClick(() => this.finish(null))
+					)
+					.addButton((b) =>
+						b
+							.setButtonText("Use this path")
+							.setCta()
+							.onClick(() => this.finish(this.value.trim()))
+					);
+			}
+			onClose(): void {
+				if (!this.resolved) resolve(null);
+			}
+			private finish(value: string | null) {
+				this.resolved = true;
+				resolve(value);
+				this.close();
+			}
+		})(app);
+		modal.open();
+	});
 }

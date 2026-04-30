@@ -22,6 +22,38 @@
   margin-bottom: 0.75rem;
 }
 
+.obsidian-objects-banner__title {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.obsidian-objects-banner__list {
+  margin: 0;
+  padding-left: 1.25rem;
+  font-size: 0.9em;
+}
+
+.obsidian-objects-banner__list a {
+  color: var(--text-on-accent);
+  text-decoration: underline;
+}
+
+.obsidian-objects-type-row.has-issue {
+  border-color: var(--text-error);
+}
+
+.obsidian-objects-type-row__issue {
+  font-size: 0.8em;
+  color: var(--text-error);
+  margin-top: 0.15rem;
+}
+
+.obsidian-objects-location-current {
+  font-size: 0.85em;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+}
+
 .obsidian-objects-empty {
   color: var(--text-muted);
   font-style: italic;
@@ -178,4 +210,39 @@
 .obsidian-objects-link-icon--nav-folder {
   margin-right: 0.3em;
   color: var(--text-muted);
+}
+
+.obsidian-objects-link-icon--cm {
+  margin-right: 0.15em;
+}
+
+/* Floating mention popup (Properties editor + Bases) */
+.obsidian-objects-mention-popup {
+  position: absolute;
+  z-index: var(--layer-popover, 60);
+  max-width: 360px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18);
+  padding: 0.25rem 0;
+}
+
+.obsidian-objects-mention-popup__row {
+  cursor: pointer;
+  padding: 0.3rem 0.6rem;
+}
+
+.obsidian-objects-mention-popup__row.is-selected,
+.obsidian-objects-mention-popup__row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.obsidian-objects-mention-popup__empty {
+  padding: 0.5rem 0.75rem;
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 0.9em;
 }
