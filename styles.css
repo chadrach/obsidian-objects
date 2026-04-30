@@ -237,9 +237,14 @@
   vertical-align: text-bottom;
 }
 
-.obsidian-objects-link-icon--nav-file,
-.obsidian-objects-link-icon--nav-folder {
+.obsidian-objects-link-icon--nav-file {
   margin-right: 0.3em;
+  color: var(--text-muted);
+}
+
+.obsidian-objects-link-icon--nav-folder {
+  margin-left: 0.4em;
+  margin-right: 0;
   color: var(--text-muted);
 }
 
@@ -255,10 +260,12 @@
   color: var(--text-accent);
 }
 
-/* Underline typed folder names in the nav pane */
+/* Underline typed folder names in the nav pane.
+   Use the text colour itself (currentColor) so the underline matches the
+   folder label and doesn't introduce a second accent colour. */
 .nav-folder-title.obsidian-objects-typed-folder .nav-folder-title-content {
   text-decoration: underline;
-  text-decoration-color: var(--text-accent);
+  text-decoration-color: currentColor;
   text-underline-offset: 2px;
 }
 

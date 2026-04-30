@@ -74,6 +74,7 @@ export class LinkDecorator {
 		}
 		this.decorateFileExplorer();
 		this.decorateRenderedLinks();
+		this.decoratePillsAndLinkWrappers();
 		this.decorateTabHeaders();
 	}
 
@@ -134,13 +135,41 @@ export class LinkDecorator {
 				this.decorateAnchor(anchor as HTMLAnchorElement, "");
 			}
 		);
-		// Properties editor values can render as anchors inside
-		// .metadata-property-value or .metadata-content.
-		root.querySelectorAll(
-			".metadata-property-value a, .metadata-content a"
-		).forEach((anchor) => {
-			this.decorateAnchor(anchor as HTMLAnchorElement, "");
+	}
+
+	/**
+	 * The structured Properties editor renders link values as either
+	 * `.metadata-link` wrappers (single link) or `.multi-select-pill` chips
+	 * (list/multi-link). Bases tables use the same multi-select pills for
+	 * link cells. Neither carries an `a.internal-link`-class anchor, so the
+	 * generic anchor pass above misses them. Pills carry the wikilink target
+	 * either in `data-value` or as their text; we resolve through metadataCache
+	 * so we don't have to know which is which.
+	 */
+	private decoratePillsAndLinkWrappers(): void {
+		const root = this.app.workspace.containerEl;
+		root.querySelectorAll(".multi-select-pill").forEach((pill) => {
+			this.decoratePill(pill as HTMLElement);
 		});
+		root.querySelectorAll(
+			".metadata-link-inner, .metadata-link a"
+		).forEach((el) => {
+			this.decorateAnchor(el as HTMLAnchorElement, "");
+		});
+	}
+
+	private decoratePill(pill: HTMLElement): void {
+		const value =
+			pill.getAttribute("data-value") ??
+			pill
+				.querySelector(".multi-select-pill-content")
+				?.textContent?.trim() ??
+			pill.textContent?.trim();
+		if (!value) return;
+		const dest = this.app.metadataCache.getFirstLinkpathDest(value, "");
+		if (!(dest instanceof TFile)) return;
+		const type = this.manager.getTypeForPath(dest.path);
+		this.applyIcon(pill, type?.icon ?? null, "link");
 	}
 
 	/**
@@ -200,6 +229,12 @@ export class LinkDecorator {
 		span.addClass(`obsidian-objects-link-icon--${variant}`);
 		span.setAttribute("data-icon", iconName);
 		setIcon(span, iconName);
-		host.prepend(span);
+		// Folder rows show the icon trailing the folder name; everything else
+		// reads more naturally with the icon ahead of the label.
+		if (variant === "nav-folder") {
+			host.appendChild(span);
+		} else {
+			host.prepend(span);
+		}
 	}
 }
