@@ -100,7 +100,13 @@ function buildFreshBase(
 ): string {
 	const doc: BaseDoc = {
 		filters: {
-			and: [`file.inFolder("${escapeForFilterArg(type.folderPath)}")`],
+			// `file.inFolder` matches any file under the folder, including the
+			// .base file itself. Restrict to `.md` so the overview doesn't
+			// list itself or other non-note files (images, attachments).
+			and: [
+				`file.inFolder("${escapeForFilterArg(type.folderPath)}")`,
+				'file.ext == "md"',
+			],
 		},
 		properties: {},
 		views: [
@@ -155,18 +161,35 @@ function updateExistingBase(
 }
 
 function updateFolderFilter(doc: BaseDoc, folderPath: string): void {
-	const wanted = `file.inFolder("${escapeForFilterArg(folderPath)}")`;
+	const wantedFolder = `file.inFolder("${escapeForFilterArg(folderPath)}")`;
+	const wantedExt = 'file.ext == "md"';
 	const filters = doc.filters ?? {};
 	const list = (filters.and as Array<string | BaseFilter> | undefined) ?? [];
-	const idx = list.findIndex(
+
+	const folderIdx = list.findIndex(
 		(entry) =>
 			typeof entry === "string" && /^file\.inFolder\(/.test(entry)
 	);
-	if (idx >= 0) {
-		list[idx] = wanted;
+	if (folderIdx >= 0) {
+		list[folderIdx] = wantedFolder;
 	} else {
-		list.unshift(wanted);
+		list.unshift(wantedFolder);
 	}
+
+	const hasExtFilter = list.some(
+		(entry) =>
+			typeof entry === "string" && /^file\.ext\s*==/.test(entry)
+	);
+	if (!hasExtFilter) {
+		// Insert right after the folder filter so the most-restrictive
+		// pattern reads cleanly top-to-bottom in the rendered Bases UI.
+		const insertAt = list.findIndex(
+			(entry) =>
+				typeof entry === "string" && /^file\.inFolder\(/.test(entry)
+		);
+		list.splice(insertAt + 1, 0, wantedExt);
+	}
+
 	filters.and = list;
 	doc.filters = filters;
 }

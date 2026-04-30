@@ -1,114 +1,137 @@
-import { App, TFile, setIcon } from "obsidian";
-import { EditorView, ViewPlugin, ViewUpdate } from "@codemirror/view";
+import { App, TFile, editorInfoField, setIcon } from "obsidian";
+import {
+	Decoration,
+	DecorationSet,
+	EditorView,
+	ViewPlugin,
+	ViewUpdate,
+	WidgetType,
+} from "@codemirror/view";
+import { Prec, RangeSetBuilder } from "@codemirror/state";
+import {
+	syntaxTree,
+	tokenClassNodeProp,
+} from "@codemirror/language";
 import { ObjectTypeManager } from "../objectTypeManager";
 
 /**
- * CodeMirror 6 view plugin that prepends an object-type icon to internal
+ * CodeMirror 6 view plugin that prepends the object-type icon to internal
  * links rendered in Live Preview / Source Mode.
  *
- * The reading-mode post-processor handles regular preview rendering, but
- * Live Preview decorates links inside the CM6 contentDOM as anchors with
- * the `internal-link` class — those don't go through the post-processor.
- * Rather than build a full `Decoration` tree (which would mean replacing
- * Obsidian's own widgets, risking visual regressions), we walk the rendered
- * DOM after each view update and inject a small icon span at the start of
- * each link. CM6 recreates these nodes whenever the viewport changes, so we
- * must re-apply on every update.
+ * The previous implementation tried to inject icons by mutating the rendered
+ * `contentDOM` after each update. That fights CM6 — it owns those nodes and
+ * recreates them aggressively, so injected children disappear quickly. The
+ * supported pattern (used by Metadata Menu) is to walk the syntax tree and
+ * register `Decoration.widget` decorations at the appropriate offsets. We
+ * use the lowest precedence so other plugins' decorations win on conflict.
+ *
+ * Token shape we look for: nodes carrying the `hmd-internal-link` class via
+ * `tokenClassNodeProp`. Those are the link-text inside `[[…]]`, so adding a
+ * widget at `node.from` puts the icon immediately to the left of the
+ * rendered link text — matching the visual style Metadata Menu users are
+ * already familiar with, except positioned before instead of after.
  */
-export function buildLinkIconExtension(
-	app: App,
-	manager: ObjectTypeManager,
-	getSourcePath: (view: EditorView) => string | null
-) {
-	return ViewPlugin.fromClass(
+export function buildLinkIconExtension(app: App, manager: ObjectTypeManager) {
+	class LinkIconWidget extends WidgetType {
+		constructor(private readonly iconName: string) {
+			super();
+		}
+		toDOM(): HTMLElement {
+			const span = document.createElement("span");
+			span.addClass("obsidian-objects-link-icon");
+			span.addClass("obsidian-objects-link-icon--cm");
+			span.setAttribute("data-icon", this.iconName);
+			span.contentEditable = "false";
+			setIcon(span, this.iconName);
+			return span;
+		}
+		eq(other: LinkIconWidget): boolean {
+			return other.iconName === this.iconName;
+		}
+		ignoreEvent(): boolean {
+			return true;
+		}
+	}
+
+	const viewPlugin = ViewPlugin.fromClass(
 		class {
-			private scheduled = 0;
-			constructor(private readonly view: EditorView) {
-				this.schedule();
+			decorations: DecorationSet;
+
+			constructor(view: EditorView) {
+				this.decorations = this.build(view);
 			}
+
 			update(update: ViewUpdate) {
-				if (
-					update.docChanged ||
-					update.viewportChanged ||
-					update.geometryChanged
-				) {
-					this.schedule();
+				if (update.docChanged || update.viewportChanged) {
+					this.decorations = this.build(update.view);
 				}
 			}
-			destroy() {
-				if (this.scheduled) cancelAnimationFrame(this.scheduled);
-				clearIcons(this.view.contentDOM);
-			}
-			/**
-			 * Mutating contentDOM from inside `update()` confuses CM6's
-			 * own bookkeeping. Defer to the next animation frame so we run
-			 * after CM6 has finished applying its decoration pass.
-			 */
-			private schedule() {
-				if (this.scheduled) return;
-				this.scheduled = requestAnimationFrame(() => {
-					this.scheduled = 0;
-					this.decorate();
-				});
-			}
-			private decorate() {
+
+			build(view: EditorView): DecorationSet {
+				const builder = new RangeSetBuilder<Decoration>();
 				if (!manager.getSettings().showLinkIcons) {
-					clearIcons(this.view.contentDOM);
-					return;
+					return builder.finish();
 				}
-				const sourcePath = getSourcePath(this.view) ?? "";
-				const links = this.view.contentDOM.querySelectorAll(
-					"a.internal-link"
+				const editorInfo = view.state.field(
+					editorInfoField,
+					false
 				);
-				links.forEach((node) => {
-					applyIconToAnchor(
-						app,
-						manager,
-						node as HTMLAnchorElement,
-						sourcePath
-					);
-				});
+				const sourcePath = editorInfo?.file?.path ?? "";
+
+				for (const { from, to } of view.visibleRanges) {
+					syntaxTree(view.state).iterate({
+						from,
+						to,
+						enter: (node) => {
+							const props = node.type.prop(
+								tokenClassNodeProp
+							);
+							if (!props) return;
+							const classes = new Set(props.split(" "));
+							const isInternal =
+								classes.has("hmd-internal-link");
+							const isAlias = classes.has("link-alias");
+							const isPipe =
+								classes.has("link-alias-pipe");
+							if (!isInternal || isAlias || isPipe) {
+								return;
+							}
+							let linkText = view.state.doc.sliceString(
+								node.from,
+								node.to
+							);
+							// The link path may include a `#heading` or
+							// `#^block` suffix — strip those so we look up
+							// the file rather than the anchor.
+							linkText = linkText.split(/[#^]/)[0];
+							const dest = app.metadataCache.getFirstLinkpathDest(
+								linkText,
+								sourcePath
+							);
+							if (!(dest instanceof TFile)) return;
+							const type = manager.getTypeForPath(dest.path);
+							if (!type?.icon) return;
+							builder.add(
+								node.from,
+								node.from,
+								Decoration.widget({
+									widget: new LinkIconWidget(type.icon),
+									side: -1,
+								})
+							);
+						},
+					});
+				}
+				return builder.finish();
 			}
+		},
+		{
+			decorations: (v) => v.decorations,
 		}
 	);
-}
 
-function applyIconToAnchor(
-	app: App,
-	manager: ObjectTypeManager,
-	anchor: HTMLAnchorElement,
-	sourcePath: string
-): void {
-	const href =
-		anchor.getAttribute("data-href") ?? anchor.getAttribute("href");
-	if (!href) return;
-	const dest = app.metadataCache.getFirstLinkpathDest(href, sourcePath);
-	const type =
-		dest instanceof TFile ? manager.getTypeForPath(dest.path) : null;
-	const iconName = type?.icon ?? null;
-	const existing = anchor.querySelector(".obsidian-objects-link-icon");
-	if (!iconName) {
-		existing?.remove();
-		return;
-	}
-	if (
-		existing &&
-		existing.getAttribute("data-icon") === iconName
-	) {
-		return;
-	}
-	existing?.remove();
-	const span = document.createElement("span");
-	span.addClass("obsidian-objects-link-icon");
-	span.addClass("obsidian-objects-link-icon--cm");
-	span.setAttribute("data-icon", iconName);
-	span.contentEditable = "false";
-	setIcon(span, iconName);
-	anchor.prepend(span);
-}
-
-function clearIcons(root: HTMLElement): void {
-	root
-		.querySelectorAll(".obsidian-objects-link-icon")
-		.forEach((n) => n.remove());
+	// Run at lowest precedence so we don't fight other plugins (folder notes,
+	// metadata menu, etc.) that may want to add their own widgets next to
+	// the same link.
+	return Prec.lowest(viewPlugin);
 }

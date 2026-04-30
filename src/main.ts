@@ -54,9 +54,7 @@ export default class ObjectsPlugin extends Plugin {
 
 		// --- CodeMirror live-preview icon extension --------------------
 		this.registerEditorExtension(
-			buildLinkIconExtension(this.app, this.manager, (view) =>
-				this.findSourcePathForView(view)
-			)
+			buildLinkIconExtension(this.app, this.manager)
 		);
 
 		// --- Mention popup (Properties editor, Bases cells) ------------
@@ -96,13 +94,24 @@ export default class ObjectsPlugin extends Plugin {
 		);
 
 		// --- Folder click → base file ---------------------------------
-		// Obsidian's file-explorer toggles folder collapse on `mousedown` in
-		// the bubble phase, so to override it we have to intercept the same
-		// event during capture and stop propagation before its handler runs.
+		// Obsidian's file-explorer toggles folder collapse on `click` in the
+		// bubble phase, so we register a capture-phase listener that runs
+		// before any other and `stopImmediatePropagation` if we own this
+		// folder. The middle-mouse case goes through the same path, matching
+		// the approach used by the Folder Notes plugin.
 		this.registerDomEvent(
 			document,
-			"mousedown",
+			"click",
 			(evt) => this.handleFolderClick(evt),
+			{ capture: true }
+		);
+		this.registerDomEvent(
+			document,
+			"auxclick",
+			(evt) => {
+				if (evt.button === 2) return;
+				this.handleFolderClick(evt);
+			},
 			{ capture: true }
 		);
 
@@ -193,13 +202,14 @@ export default class ObjectsPlugin extends Plugin {
 	}
 
 	/**
-	 * Intercepts mousedown on typed folder rows in the file explorer and
-	 * opens the associated .base file instead of expanding the folder. The
+	 * Intercepts clicks on typed folder rows in the file explorer and opens
+	 * the associated .base file instead of expanding the folder. The
 	 * collapse chevron is left alone so the user can still expand/collapse
-	 * the tree when they want to.
+	 * the tree when they want to. We listen in capture phase and call
+	 * `stopImmediatePropagation` before Obsidian's own click handler runs.
 	 */
 	private handleFolderClick(evt: MouseEvent): void {
-		if (evt.button !== 0) return;
+		if (evt.button !== 0 && evt.type !== "auxclick") return;
 		if (!this.manager.getSettings().folderClickOpensBase) return;
 		const target = evt.target as HTMLElement | null;
 		if (!target) return;
@@ -207,17 +217,28 @@ export default class ObjectsPlugin extends Plugin {
 			".nav-folder-title"
 		) as HTMLElement | null;
 		if (!folderTitle) return;
-		// Let the user still use the collapse chevron.
-		if (target.closest(".nav-folder-collapse-indicator")) return;
+		// Let the user still use the collapse chevron. Different Obsidian
+		// versions ship slightly different markup for it, so accept either
+		// the legacy `.nav-folder-collapse-indicator` or the newer
+		// `.collapse-icon` class used everywhere else.
+		if (
+			target.closest(".collapse-icon") ||
+			target.closest(".nav-folder-collapse-indicator")
+		) {
+			return;
+		}
 		const path = folderTitle.dataset.path;
 		if (!path) return;
 		const type = this.manager.getTypeByFolder(path);
 		if (!type) return;
 		const base = this.app.vault.getAbstractFileByPath(type.basePath);
 		if (!(base instanceof TFile)) return;
+		// Order matters: stopImmediatePropagation has to fire first so any
+		// other capture-phase listeners on the same element (Obsidian's own
+		// toggle) don't run after this one.
+		evt.stopImmediatePropagation();
 		evt.preventDefault();
 		evt.stopPropagation();
-		evt.stopImmediatePropagation();
 		void this.app.workspace.getLeaf().openFile(base);
 	}
 
@@ -233,15 +254,6 @@ export default class ObjectsPlugin extends Plugin {
 			const cm = (view.editor as unknown as { cm?: EditorView }).cm;
 			cm?.dispatch({});
 		}
-	}
-
-	private findSourcePathForView(view: EditorView): string | null {
-		// Walk up the workspace and find the leaf that owns this contentDOM.
-		const parent = view.contentDOM.closest(
-			".workspace-leaf-content"
-		) as HTMLElement | null;
-		const path = parent?.getAttribute("data-path");
-		return path ?? null;
 	}
 
 	/** Unused convenience, kept for external callers / future code. */

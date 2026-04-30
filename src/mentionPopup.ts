@@ -143,6 +143,14 @@ export class MentionPopup {
 			this.session = this.startSession(host, triggerOffset);
 		} else {
 			this.session.triggerOffset = triggerOffset;
+			// Re-resolve implicit scope on every input — the active file
+			// can change, and Bases cells share a host but rotate their
+			// column context.
+			this.session.implicitTypeId = detectImplicitType(
+				this.app,
+				this.manager,
+				host
+			);
 		}
 		this.refresh(rawQuery);
 	}
@@ -169,7 +177,11 @@ export class MentionPopup {
 			host,
 			triggerOffset,
 			filter: null,
-			implicitTypeId: detectImplicitType(this.manager, host),
+			implicitTypeId: detectImplicitType(
+				this.app,
+				this.manager,
+				host
+			),
 			current: [],
 			highlighted: 0,
 			popupEl: popup,
@@ -509,16 +521,12 @@ export class MentionPopup {
 			"",
 			true
 		);
-		const wikilink = `[[${linktext}${
+		// Always insert the bracketed wikilink form. Both the structured
+		// Properties editor and Bases table cells render `[[…]]` strings as
+		// link chips; inserting bare linktext writes a plain string instead.
+		const insertion = `[[${linktext}${
 			linktext === displayName ? "" : `|${displayName}`
 		}]]`;
-		// Inside the Properties editor we want to insert just the link text,
-		// no brackets, since Obsidian renders a link from a bare value. Bases
-		// cells behave the same. Use the file's basename so the value is the
-		// linktext that the property editor will resolve.
-		const insertion = isPropertyValueHost(session.host)
-			? linktext
-			: wikilink;
 
 		const text = readHostText(session.host);
 		const caret = readHostCaret(session.host);
@@ -606,104 +614,124 @@ function writeHostText(
 }
 
 /**
- * In the Properties editor and in Bases table cells, the value being edited
- * is intended as a property value, not raw markdown. Inserting brackets
- * would write the literal `[[…]]` to frontmatter rather than producing a
- * link, so we insert the link text only.
+ * Try to figure out which object type the user implicitly intends, based
+ * on where the popup was triggered. Two contexts:
+ *
+ *   1. The structured Properties editor — DOM rows expose the frontmatter
+ *      key via `data-property-key`. We pair that with `getActiveFile()` to
+ *      find which note is being edited and look up its object type.
+ *
+ *   2. Bases table cells — Bases doesn't document its DOM, so we try a
+ *      handful of attribute / class probes and finally fall back to using
+ *      the cell's column index against a likely table header. The column
+ *      name is matched against every defined type's properties; the first
+ *      with a linkedTypeId wins.
+ *
+ * If neither path resolves, return null and the popup will simply not
+ * apply implicit scoping (the user can still type "<Type>/" themselves).
  */
-function isPropertyValueHost(host: HTMLElement): boolean {
-	if (host.closest(".metadata-property")) return true;
-	if (host.closest(".metadata-properties")) return true;
-	if (host.closest(".bases-rendered-cell")) return true;
-	if (host.closest(".bases-table")) return true;
-	if (host.closest(".bases-tr")) return true;
-	return false;
-}
-
 function detectImplicitType(
+	app: App,
 	manager: ObjectTypeManager,
 	host: HTMLElement
 ): string | null {
-	// Properties editor row: `data-property-key` carries the property name,
-	// and the file path can be inferred from the surrounding leaf.
-	const propertyEl = host.closest(
-		".metadata-property"
-	) as HTMLElement | null;
-	const propertyKey =
-		propertyEl?.dataset.propertyKey ??
-		(host.closest("[data-property-key]") as HTMLElement | null)?.dataset
-			.propertyKey;
-	const filePath = findOwningFilePath(host);
-	if (propertyKey && filePath) {
-		const fileType = manager.getTypeForPath(filePath);
-		if (fileType) {
-			const prop = manager
-				.getEffectiveProperties(fileType)
-				.find(
-					(p) => p.name.toLowerCase() === propertyKey.toLowerCase()
-				);
-			if (prop?.linkedTypeId) return prop.linkedTypeId;
-		}
-	}
-
-	// Bases cell: the column header carries the property name, and the
-	// row carries the file path. Bases markup varies by version, so we
-	// look for a few common attribute names.
-	const baseCell = host.closest(
-		".bases-rendered-cell, .bases-cell, [data-bases-property]"
-	) as HTMLElement | null;
-	if (baseCell) {
-		const propName =
-			baseCell.dataset.basesProperty ??
-			baseCell.dataset.property ??
-			columnHeaderForCell(baseCell);
-		const rowPath = baseCell
-			.closest("[data-row-path], [data-file-path]")
-			?.getAttribute("data-row-path") ??
-			(baseCell.closest("[data-row-path], [data-file-path]") as HTMLElement | null)?.dataset
-				.filePath;
-		if (propName) {
-			// We may not know a specific file's type from the row, but we can
-			// look up any type that defines a linked property with this name
-			// and bias toward that.
-			for (const t of manager.getTypes()) {
+	const propertyKey = readPropertyKey(host);
+	if (propertyKey) {
+		// In the Properties editor the active file IS the note being
+		// edited. `getActiveFile` is the most reliable signal — DOM-based
+		// path detection breaks across Obsidian versions.
+		const activeFile = app.workspace.getActiveFile();
+		if (activeFile) {
+			const fileType = manager.getTypeForPath(activeFile.path);
+			if (fileType) {
 				const prop = manager
-					.getEffectiveProperties(t)
+					.getEffectiveProperties(fileType)
 					.find(
 						(p) =>
-							p.name.toLowerCase() === propName.toLowerCase()
+							p.name.toLowerCase() ===
+							propertyKey.toLowerCase()
 					);
 				if (prop?.linkedTypeId) return prop.linkedTypeId;
 			}
-			void rowPath;
 		}
+		// Fallback: if no file/type context but a property name with the
+		// same name has a linked type on *any* defined type, use that.
+		const linked = findLinkedTypeForPropertyName(
+			manager,
+			propertyKey
+		);
+		if (linked) return linked;
+	}
+
+	const basesProp = readBasesColumnName(host);
+	if (basesProp) {
+		const linked = findLinkedTypeForPropertyName(manager, basesProp);
+		if (linked) return linked;
+	}
+
+	return null;
+}
+
+function readPropertyKey(host: HTMLElement): string | null {
+	const direct = host.dataset.propertyKey;
+	if (direct) return direct;
+	const ancestor = host.closest(
+		"[data-property-key]"
+	) as HTMLElement | null;
+	if (ancestor?.dataset.propertyKey) return ancestor.dataset.propertyKey;
+	const row = host.closest(".metadata-property") as HTMLElement | null;
+	if (row?.dataset.propertyKey) return row.dataset.propertyKey;
+	if (row) {
+		const keyEl = row.querySelector(
+			".metadata-property-key-input, .metadata-property-key"
+		) as HTMLElement | null;
+		const text = keyEl?.innerText?.trim();
+		if (text) return text;
 	}
 	return null;
 }
 
-function columnHeaderForCell(cell: HTMLElement): string | null {
-	const headers = cell
-		.closest(".bases-table, table")
-		?.querySelectorAll(
-			"th, .bases-th, [data-bases-property]"
-		);
-	if (!headers) return null;
-	const cellIndex = Array.from(
-		cell.parentElement?.children ?? []
-	).indexOf(cell);
-	const header = cellIndex >= 0 ? headers[cellIndex] : null;
+function readBasesColumnName(host: HTMLElement): string | null {
+	const cell = host.closest(
+		".bases-rendered-cell, .bases-cell, .bases-td, [data-bases-property], [data-property]"
+	) as HTMLElement | null;
+	if (!cell) return null;
+	const direct =
+		cell.dataset.basesProperty ?? cell.dataset.property;
+	if (direct) return direct;
+	// Use the cell's index to fish the header out of the surrounding table.
+	const row = cell.parentElement;
+	if (!row) return null;
+	const cellIndex = Array.from(row.children).indexOf(cell);
+	if (cellIndex < 0) return null;
+	const table = cell.closest(
+		".bases-table, .bases-rendered-table, table"
+	);
+	if (!table) return null;
+	const headers = table.querySelectorAll(
+		"th, .bases-th, .bases-rendered-th, [data-bases-property]"
+	);
+	const header = headers[cellIndex] as HTMLElement | undefined;
 	if (!header) return null;
 	return (
-		(header as HTMLElement).dataset.basesProperty ??
-		(header as HTMLElement).innerText.trim() ??
+		header.dataset.basesProperty ??
+		header.innerText.trim() ??
 		null
 	);
 }
 
-function findOwningFilePath(host: HTMLElement): string | null {
-	const view = host.closest(".workspace-leaf-content") as HTMLElement | null;
-	const path = view?.getAttribute("data-path");
-	return path ?? null;
+function findLinkedTypeForPropertyName(
+	manager: ObjectTypeManager,
+	propertyName: string
+): string | null {
+	const lower = propertyName.toLowerCase();
+	for (const t of manager.getTypes()) {
+		const prop = manager
+			.getEffectiveProperties(t)
+			.find((p) => p.name.toLowerCase() === lower);
+		if (prop?.linkedTypeId) return prop.linkedTypeId;
+	}
+	return null;
 }
 
 function findMatchingNotes(
