@@ -207,10 +207,14 @@ export class ObjectTypeManager {
 	 * (including the .base file) are moved on disk; the type's `folderPath`
 	 * and `basePath` are rewritten accordingly.
 	 *
-	 * Use case: the user picked a different "Object Location" in the modal,
-	 * either pointing the type at a new folder name or moving it under a
-	 * different parent. The caller is expected to have shown a confirmation
-	 * dialog with the affected file count first (see `getMoveImpact`).
+	 * Sub-types nested inside the moved folder are silently relocated too —
+	 * their folders move with the parent on disk, so we just need to fix up
+	 * their stored `folderPath` / `basePath` to match.
+	 *
+	 * Use case: the user picked a different "Object Location" or renamed the
+	 * type's plural in the modal. The caller is expected to have shown a
+	 * confirmation dialog with the affected file count first (see
+	 * `getMoveImpact`) and to have verified the target path is free.
 	 */
 	async moveType(
 		id: string,
@@ -221,30 +225,50 @@ export class ObjectTypeManager {
 		const target = normalizePath(newFolderPath);
 		if (target === type.folderPath) return type;
 
-		const folder = this.app.vault.getAbstractFileByPath(type.folderPath);
+		const oldFolderPath = type.folderPath;
+		const folder = this.app.vault.getAbstractFileByPath(oldFolderPath);
 		const targetExisting = this.app.vault.getAbstractFileByPath(target);
 
 		if (folder instanceof TFolder) {
 			if (targetExisting && !(targetExisting instanceof TFolder)) {
 				throw new Error(
-					`Cannot move ${type.folderPath} to ${target}: a file with that name already exists.`
+					`Cannot move ${oldFolderPath} to ${target}: a file with that name already exists.`
 				);
 			}
 			if (!targetExisting) {
-				// Ensure parent exists (vault.rename will create the leaf).
 				const parent = target.includes("/")
 					? target.slice(0, target.lastIndexOf("/"))
 					: "";
 				if (parent) await ensureFolder(this.app.vault, parent);
 				await this.app.fileManager.renameFile(folder, target);
 			} else {
-				// Target folder already exists — merge: move each child in.
-				await mergeFolderInto(this.app, folder, targetExisting as TFolder);
+				await mergeFolderInto(
+					this.app,
+					folder,
+					targetExisting as TFolder
+				);
 			}
 		} else {
-			// Source folder doesn't exist (broken reference). Just create the
-			// target so subsequent .base writes succeed.
 			await ensureFolder(this.app.vault, target);
+		}
+
+		// Cascade: update any sub-type whose stored path lived inside the
+		// moved folder. The on-disk folder moved with the parent's rename,
+		// so we just rewrite the path strings to match reality.
+		const oldPrefix = oldFolderPath + "/";
+		const cascaded: Array<{
+			type: ObjectTypeDefinition;
+			previousBasePath: string;
+		}> = [];
+		for (const other of this.data.types) {
+			if (other.id === id) continue;
+			if (!other.folderPath.startsWith(oldPrefix)) continue;
+			const relative = other.folderPath.slice(oldPrefix.length);
+			const newSubPath = joinPath(target, relative);
+			cascaded.push({ type: other, previousBasePath: other.basePath });
+			other.folderPath = normalizePath(newSubPath);
+			other.basePath = basePathFor(other.folderPath, other.pluralName);
+			other.updatedAt = Date.now();
 		}
 
 		const oldBasePath = type.basePath;
@@ -252,12 +276,15 @@ export class ObjectTypeManager {
 		type.basePath = basePathFor(target, type.pluralName);
 		type.updatedAt = Date.now();
 
-		// If the .base file moved with the folder rename it'll have followed
-		// to <target>/<old-name>.base. Find it and rename to the canonical
-		// `<plural>.base` if it doesn't already match.
 		await reconcileBaseFilePath(this.app, type, oldBasePath);
+		for (const c of cascaded) {
+			await reconcileBaseFilePath(this.app, c.type, c.previousBasePath);
+		}
 
 		await this.rewriteBase(type);
+		for (const c of cascaded) {
+			await this.rewriteBase(c.type);
+		}
 		await this.save();
 		return type;
 	}

@@ -4,6 +4,7 @@ import {
 	Modal,
 	Notice,
 	Setting,
+	TFile,
 	TFolder,
 	setIcon,
 } from "obsidian";
@@ -235,6 +236,13 @@ export class ObjectTypeSettingsModal extends Modal {
 			draft.existingId ? `Edit ${draft.name || "object type"}` : "New object type"
 		);
 
+		// Forward-declare so the parent dropdown handler can refresh the
+		// inherited-properties block once it's been mounted below.
+		let propsEl: HTMLElement | null = null;
+		const refreshProps = () => {
+			if (propsEl) this.renderProperties(draft, propsEl);
+		};
+
 		// Per-type broken-reference banner.
 		if (draft.existingId) {
 			const issues = this.manager.getBrokenReferencesForType(
@@ -256,8 +264,10 @@ export class ObjectTypeSettingsModal extends Modal {
 				}
 				const fix = banner.createDiv();
 				new ButtonComponent(fix)
-					.setButtonText("Pick replacement folder…")
-					.onClick(() => this.openFolderPicker(draft));
+					.setButtonText("Pick replacement location…")
+					.onClick(() =>
+						this.openLocationPicker(draft, () => this.render())
+					);
 			}
 		}
 
@@ -275,7 +285,9 @@ export class ObjectTypeSettingsModal extends Modal {
 
 		new Setting(this.contentEl)
 			.setName("Plural name")
-			.setDesc("Used as the folder name by default.")
+			.setDesc(
+				"Also the folder name. Renaming this renames the folder."
+			)
 			.addText((t) =>
 				t
 					.setPlaceholder("People")
@@ -285,36 +297,65 @@ export class ObjectTypeSettingsModal extends Modal {
 					})
 			);
 
-		const locationSetting = new Setting(this.contentEl)
-			.setName("Object Location")
+		// Sub-type of comes BEFORE Location: picking a parent forces the
+		// location to live inside that parent, so the location field reads
+		// as a derived consequence rather than an independent choice.
+		const parentSetting = new Setting(this.contentEl)
+			.setName("Sub-type of")
 			.setDesc(
-				draft.existingId
-					? "Vault folder containing notes of this type. Changing this will move the folder and every nested note."
-					: "Vault folder for new notes of this type. Pick an existing folder or create a new one below."
+				"Parent object type. Sub-type folders are nested inside the parent and inherit its properties."
 			);
-		const locationDisplay = locationSetting.descEl.createDiv({
-			cls: "obsidian-objects-location-current",
-			text: draft.folderPath
-				? `Current: ${draft.folderPath}`
-				: "Not set yet — using the plural name.",
-		});
-		locationSetting.addButton((b) =>
-			b
-				.setButtonText("Pick folder…")
-				.onClick(() => this.openFolderPicker(draft, locationDisplay))
-		);
-		locationSetting.addButton((b) =>
-			b.setButtonText("New folder…").onClick(async () => {
-				const result = await promptForFolderName(
-					this.app,
-					draft.folderPath
+		let locationDisplay: HTMLElement;
+		let locationPickerBtn: ButtonComponent;
+		const updateLocationVisual = () => {
+			if (!locationDisplay || !locationPickerBtn) return;
+			if (draft.parentId) {
+				const parent = this.manager.getTypeById(draft.parentId);
+				const parentPath = parent?.folderPath ?? "";
+				draft.locationPath = parentPath;
+				const label = parentPath
+					? `Inside ${parent?.name ?? "parent"} → ${parentPath}`
+					: `Inside ${parent?.name ?? "parent"} (vault root)`;
+				locationDisplay.setText(label);
+				locationPickerBtn.setDisabled(true);
+			} else {
+				const path = draft.locationPath || "";
+				locationDisplay.setText(
+					path ? `Current: ${path}` : "Vault root"
 				);
-				if (result === null) return;
-				draft.folderPath = result;
-				draft.folderPathDirty = true;
-				locationDisplay.setText(`Current: ${result}`);
-			})
-		);
+				locationPickerBtn.setDisabled(false);
+			}
+		};
+		parentSetting.addDropdown((d) => {
+			d.addOption("", "— None (top-level type) —");
+			for (const t of this.manager.getTypes()) {
+				if (t.id === draft.existingId) continue;
+				d.addOption(t.id, this.manager.getQualifiedName(t));
+			}
+			d.setValue(draft.parentId ?? "");
+			d.onChange((v) => {
+				draft.parentId = v || null;
+				updateLocationVisual();
+				refreshProps();
+			});
+		});
+
+		const locationSetting = new Setting(this.contentEl)
+			.setName("Location")
+			.setDesc(
+				"Folder that contains the type's folder. Default is the vault root."
+			);
+		locationDisplay = locationSetting.descEl.createDiv({
+			cls: "obsidian-objects-location-current",
+		});
+		locationSetting.addButton((b) => {
+			locationPickerBtn = b
+				.setButtonText("Pick location…")
+				.onClick(() =>
+					this.openLocationPicker(draft, updateLocationVisual)
+				);
+		});
+		updateLocationVisual();
 
 		new Setting(this.contentEl)
 			.setName("Icon")
@@ -328,25 +369,8 @@ export class ObjectTypeSettingsModal extends Modal {
 					})
 			);
 
-		new Setting(this.contentEl)
-			.setName("Sub-type of")
-			.setDesc(
-				"Parent object type. Sub-type folders are nested inside the parent and inherit its properties."
-			)
-			.addDropdown((d) => {
-				d.addOption("", "— None (top-level type) —");
-				for (const t of this.manager.getTypes()) {
-					if (t.id === draft.existingId) continue;
-					d.addOption(t.id, this.manager.getQualifiedName(t));
-				}
-				d.setValue(draft.parentId ?? "");
-				d.onChange((v) => {
-					draft.parentId = v || null;
-				});
-			});
-
 		this.contentEl.createEl("h3", { text: "Properties" });
-		const propsEl = this.contentEl.createDiv({
+		propsEl = this.contentEl.createDiv({
 			cls: "obsidian-objects-props",
 		});
 		this.renderProperties(draft, propsEl);
@@ -367,32 +391,24 @@ export class ObjectTypeSettingsModal extends Modal {
 			.onClick(() => void this.handleSave());
 	}
 
-	private openFolderPicker(
+	/**
+	 * Pick the parent folder that will *contain* the type's folder. The
+	 * picker offers every existing folder in the vault (including the
+	 * root). The actual type folder is composed elsewhere as
+	 * `locationPath + pluralName` so we never let the user type that path
+	 * directly.
+	 */
+	private openLocationPicker(
 		draft: TypeDraft,
-		display?: HTMLElement
+		afterChange: () => void
 	): void {
 		new FolderPickerModal(
 			this.app,
 			(folder) => {
-				draft.folderPath = folder.path === "" ? "/" : folder.path;
-				draft.folderPathDirty = true;
-				if (display) {
-					display.setText(`Current: ${draft.folderPath}`);
-				}
+				draft.locationPath = folder.path;
+				afterChange();
 			},
-			{
-				title: "Select Object Location…",
-				filter: (f: TFolder) => {
-					// Don't let a sub-type live above its parent in the tree.
-					if (!draft.parentId) return true;
-					const parent = this.manager.getTypeById(draft.parentId);
-					if (!parent) return true;
-					return (
-						f.path === parent.folderPath ||
-						f.path.startsWith(parent.folderPath + "/")
-					);
-				},
-			}
+			{ title: "Select location…" }
 		).open();
 	}
 
@@ -555,16 +571,26 @@ export class ObjectTypeSettingsModal extends Modal {
 	private async handleSave(): Promise<void> {
 		const draft = this.draft;
 		if (!draft) return;
-		if (!draft.name.trim()) {
+
+		const trimmedName = draft.name.trim();
+		if (!trimmedName) {
 			new Notice("Object type needs a name.");
 			return;
 		}
-		const pluralName = draft.pluralName.trim() || draft.name.trim() + "s";
-		const folderPath =
-			safeFolderName(draft.folderPath) ||
-			this.computeDefaultFolder(draft.parentId, pluralName);
+		const pluralName = draft.pluralName.trim() || trimmedName + "s";
+		const safePlural = safeFolderName(pluralName);
+		if (!safePlural) {
+			new Notice("Plural name cannot be used as a folder name.");
+			return;
+		}
 
-		// Sanity: no empty property names; no duplicate names.
+		// Compose the destination folder path from the explicit pieces. For
+		// sub-types the location is forced to the parent's folder by the UI.
+		const targetFolderPath = joinPath(
+			draft.locationPath || "",
+			safePlural
+		);
+
 		const cleaned = draft.properties.map((p) => ({
 			...p,
 			name: p.name.trim(),
@@ -580,25 +606,45 @@ export class ObjectTypeSettingsModal extends Modal {
 		}
 
 		if (draft.existingId) {
-			// Folder relocation must be confirmed first so we don't surprise
-			// the user by moving dozens of files behind a property change.
 			const type = this.manager.getTypeById(draft.existingId);
-			const folderChanged =
-				draft.folderPathDirty &&
-				type &&
-				folderPath !== type.folderPath;
-			if (folderChanged) {
+			if (!type) return;
+
+			if (targetFolderPath !== type.folderPath) {
+				// Block destructive name/location collisions before the
+				// move starts — moveType would silently merge into an
+				// existing folder otherwise.
+				const occupant =
+					this.app.vault.getAbstractFileByPath(targetFolderPath);
+				if (occupant) {
+					const kind =
+						occupant instanceof TFile ? "file" : "folder";
+					new Notice(
+						`Cannot move: a ${kind} already exists at "${targetFolderPath}".`
+					);
+					return;
+				}
+
 				const impact = this.manager.getMoveImpact(draft.existingId);
+				const oldParent = parentDir(type.folderPath);
+				const isPureRename =
+					oldParent === (draft.locationPath || "");
+				const title = isPureRename
+					? "Rename type folder?"
+					: "Move type folder?";
+				const body =
+					`"${type.folderPath}" will become "${targetFolderPath}". ` +
+					`${impact.fileCount} file(s) and ${impact.subfolderCount} ` +
+					`subfolder(s) will move with it.`;
 				const choice = await confirmAction(this.app, {
-					title: "Move object folder?",
-					body: `Move "${type!.folderPath}" to "${folderPath}"? ${impact.fileCount} file(s) and ${impact.subfolderCount} subfolder(s) will move with it.`,
-					confirmText: "Move",
+					title,
+					body,
+					confirmText: isPureRename ? "Rename" : "Move",
 				});
 				if (choice !== "confirm") return;
 				try {
 					await this.manager.moveType(
 						draft.existingId,
-						folderPath
+						targetFolderPath
 					);
 				} catch (err) {
 					new Notice(`Move failed: ${err}`);
@@ -622,10 +668,7 @@ export class ObjectTypeSettingsModal extends Modal {
 						preview.removed.length === 1 ? "y" : "ies"
 					}.`,
 					extraButtons: [
-						{
-							text: "Keep values in notes",
-							value: "keep",
-						},
+						{ text: "Keep values in notes", value: "keep" },
 					],
 					confirmText: "Remove values",
 				});
@@ -645,7 +688,7 @@ export class ObjectTypeSettingsModal extends Modal {
 			await this.manager.updateType(
 				draft.existingId,
 				{
-					name: draft.name.trim(),
+					name: trimmedName,
 					pluralName,
 					icon: draft.icon.trim() || "box",
 					parentId: draft.parentId,
@@ -654,12 +697,32 @@ export class ObjectTypeSettingsModal extends Modal {
 				{ removeDeletedFromNotes: removeFromNotes }
 			);
 		} else {
+			// New types: a same-named folder owned by another type is a hard
+			// no. A bare folder at the same path is fine — we adopt it.
+			const occupant =
+				this.app.vault.getAbstractFileByPath(targetFolderPath);
+			if (occupant instanceof TFile) {
+				new Notice(
+					`A file already exists at "${targetFolderPath}".`
+				);
+				return;
+			}
+			if (occupant instanceof TFolder) {
+				const owner = this.manager.getTypeByFolder(targetFolderPath);
+				if (owner) {
+					new Notice(
+						`Folder "${targetFolderPath}" is already registered as type "${owner.name}".`
+					);
+					return;
+				}
+			}
+
 			try {
 				await this.manager.createType({
-					name: draft.name.trim(),
+					name: trimmedName,
 					pluralName,
 					icon: draft.icon.trim() || "box",
-					folderPath,
+					folderPath: targetFolderPath,
 					parentId: draft.parentId,
 					properties: cleaned,
 				});
@@ -672,36 +735,39 @@ export class ObjectTypeSettingsModal extends Modal {
 		this.draft = null;
 		this.render();
 	}
+}
 
-	private computeDefaultFolder(
-		parentId: string | null | undefined,
-		pluralName: string
-	): string {
-		if (parentId) {
-			const parent = this.manager.getTypeById(parentId);
-			if (parent) return joinPath(parent.folderPath, pluralName);
-		}
-		return pluralName;
-	}
+/** Return the parent directory portion of a vault-relative path. */
+function parentDir(path: string): string {
+	const i = path.lastIndexOf("/");
+	return i > 0 ? path.slice(0, i) : "";
 }
 
 interface TypeDraft {
 	existingId?: string;
 	name: string;
 	pluralName: string;
-	folderPath: string;
+	/** Parent folder containing the type's folder. Empty string = vault root. */
+	locationPath: string;
 	icon: string;
 	parentId: string | null;
 	properties: ObjectProperty[];
-	/** True once the user has explicitly chosen a new location. */
-	folderPathDirty?: boolean;
 }
 
-function blankDraft(folderPath = ""): TypeDraft {
+function blankDraft(initialFolderPath = ""): TypeDraft {
+	// Honour an initial folder path passed in by the caller (used when the
+	// user opened the modal from a folder context menu): treat the picked
+	// folder as the parent location.
+	const locationPath = initialFolderPath
+		? parentDirOfPath(initialFolderPath)
+		: "";
+	const pluralName = initialFolderPath
+		? basenameOfPath(initialFolderPath)
+		: "";
 	return {
 		name: "",
-		pluralName: "",
-		folderPath,
+		pluralName,
+		locationPath,
 		icon: "box",
 		parentId: null,
 		properties: [],
@@ -713,59 +779,19 @@ function draftFromType(type: ObjectTypeDefinition): TypeDraft {
 		existingId: type.id,
 		name: type.name,
 		pluralName: type.pluralName,
-		folderPath: type.folderPath,
+		locationPath: parentDirOfPath(type.folderPath),
 		icon: type.icon,
 		parentId: type.parentId ?? null,
 		properties: type.properties.map((p) => ({ ...p })),
 	};
 }
 
-/**
- * Tiny modal that asks for a folder path string. Used when the user wants
- * to *create* (rather than adopt) a folder. Returns null if cancelled.
- */
-function promptForFolderName(
-	app: App,
-	defaultValue: string
-): Promise<string | null> {
-	return new Promise((resolve) => {
-		const modal = new (class extends Modal {
-			private value = defaultValue;
-			private resolved = false;
-			onOpen(): void {
-				this.titleEl.setText("New folder path");
-				new Setting(this.contentEl)
-					.setName("Vault-relative path")
-					.addText((t) =>
-						t
-							.setValue(this.value)
-							.setPlaceholder("People")
-							.onChange((v) => {
-								this.value = v;
-							})
-					);
-				new Setting(this.contentEl)
-					.addButton((b) =>
-						b
-							.setButtonText("Cancel")
-							.onClick(() => this.finish(null))
-					)
-					.addButton((b) =>
-						b
-							.setButtonText("Use this path")
-							.setCta()
-							.onClick(() => this.finish(this.value.trim()))
-					);
-			}
-			onClose(): void {
-				if (!this.resolved) resolve(null);
-			}
-			private finish(value: string | null) {
-				this.resolved = true;
-				resolve(value);
-				this.close();
-			}
-		})(app);
-		modal.open();
-	});
+function parentDirOfPath(path: string): string {
+	const i = path.lastIndexOf("/");
+	return i > 0 ? path.slice(0, i) : "";
+}
+
+function basenameOfPath(path: string): string {
+	const i = path.lastIndexOf("/");
+	return i >= 0 ? path.slice(i + 1) : path;
 }
