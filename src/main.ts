@@ -125,6 +125,11 @@ export default class ObjectsPlugin extends Plugin {
 			{ capture: true }
 		);
 
+		// --- Ribbon ---------------------------------------------------
+		this.addRibbonIcon("layers", "Open Object Type Settings", () => {
+			this.openTypeSettings();
+		});
+
 		// --- Commands -------------------------------------------------
 		this.addCommand({
 			id: "open-object-type-settings",

@@ -19,6 +19,10 @@ import { confirmAction } from "./confirmModal";
 import { FolderPickerModal } from "../folderPicker";
 import { joinPath, safeFolderName } from "../utils";
 
+// Tags and Aliases are intentionally excluded — Obsidian reserves the
+// "tags" and "aliases" frontmatter keys for the Tags / Aliases property
+// types respectively, so they're modelled as per-type checkboxes elsewhere
+// in the UI rather than as user-defined properties.
 const PROPERTY_TYPES: Array<{ value: PropertyType; label: string }> = [
 	{ value: "text", label: "Text" },
 	{ value: "list", label: "List" },
@@ -26,8 +30,6 @@ const PROPERTY_TYPES: Array<{ value: PropertyType; label: string }> = [
 	{ value: "checkbox", label: "Checkbox" },
 	{ value: "date", label: "Date" },
 	{ value: "datetime", label: "Datetime" },
-	{ value: "tags", label: "Tags" },
-	{ value: "aliases", label: "Aliases" },
 ];
 
 /**
@@ -96,7 +98,12 @@ export class ObjectTypeSettingsModal extends Modal {
 	private renderList(): void {
 		this.titleEl.setText("Object Types");
 
-		const broken = this.manager.getBrokenReferences();
+		// Daily Notes is auto-managed via the plugin settings toggle; we
+		// deliberately keep it out of this UI so the user can't accidentally
+		// override their core Daily Notes plugin configuration here.
+		const broken = this.manager
+			.getBrokenReferences()
+			.filter((b) => b.type.managed !== "daily-notes");
 		if (broken.length > 0) {
 			const banner = this.contentEl.createDiv({
 				cls: "obsidian-objects-banner",
@@ -136,7 +143,9 @@ export class ObjectTypeSettingsModal extends Modal {
 		const list = this.contentEl.createDiv({
 			cls: "obsidian-objects-type-list",
 		});
-		const types = this.manager.getTypes();
+		const types = this.manager
+			.getTypes()
+			.filter((t) => t.managed !== "daily-notes");
 		if (types.length === 0) {
 			list.createDiv({
 				cls: "obsidian-objects-empty",
@@ -429,6 +438,35 @@ export class ObjectTypeSettingsModal extends Modal {
 			}
 		}
 
+		// Tags / Aliases toggles. Obsidian reserves these property names so
+		// they can't be expressed as regular Object Properties; we model
+		// them as on/off switches that decide whether new notes of this
+		// type get the corresponding empty frontmatter entry. Toggling off
+		// does not strip values from existing notes.
+		const reserved = container.createDiv({
+			cls: "obsidian-objects-prop-toggles",
+		});
+		new Setting(reserved)
+			.setName("Show Tags property by default")
+			.setDesc(
+				"When creating a new note of this type, include an empty `tags:` entry in its frontmatter. Existing notes are not modified."
+			)
+			.addToggle((t) =>
+				t.setValue(draft.showTags ?? false).onChange((v) => {
+					draft.showTags = v;
+				})
+			);
+		new Setting(reserved)
+			.setName("Show Aliases property by default")
+			.setDesc(
+				"When creating a new note of this type, include an empty `aliases:` entry in its frontmatter. Existing notes are not modified."
+			)
+			.addToggle((t) =>
+				t.setValue(draft.showAliases ?? false).onChange((v) => {
+					draft.showAliases = v;
+				})
+			);
+
 		for (const prop of draft.properties) {
 			const row = container.createDiv({
 				cls: "obsidian-objects-prop-row",
@@ -693,6 +731,8 @@ export class ObjectTypeSettingsModal extends Modal {
 					icon: draft.icon.trim() || "box",
 					parentId: draft.parentId,
 					properties: cleaned,
+					showTags: draft.showTags ?? false,
+					showAliases: draft.showAliases ?? false,
 				},
 				{ removeDeletedFromNotes: removeFromNotes }
 			);
@@ -725,6 +765,8 @@ export class ObjectTypeSettingsModal extends Modal {
 					folderPath: targetFolderPath,
 					parentId: draft.parentId,
 					properties: cleaned,
+					showTags: draft.showTags ?? false,
+					showAliases: draft.showAliases ?? false,
 				});
 			} catch (err) {
 				new Notice(String(err));
@@ -752,6 +794,8 @@ interface TypeDraft {
 	icon: string;
 	parentId: string | null;
 	properties: ObjectProperty[];
+	showTags?: boolean;
+	showAliases?: boolean;
 }
 
 function blankDraft(initialFolderPath = ""): TypeDraft {
@@ -771,6 +815,8 @@ function blankDraft(initialFolderPath = ""): TypeDraft {
 		icon: "box",
 		parentId: null,
 		properties: [],
+		showTags: false,
+		showAliases: false,
 	};
 }
 
@@ -783,6 +829,8 @@ function draftFromType(type: ObjectTypeDefinition): TypeDraft {
 		icon: type.icon,
 		parentId: type.parentId ?? null,
 		properties: type.properties.map((p) => ({ ...p })),
+		showTags: type.showTags ?? false,
+		showAliases: type.showAliases ?? false,
 	};
 }
 

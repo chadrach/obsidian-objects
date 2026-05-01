@@ -93,11 +93,27 @@ export async function writeBaseFile(
 
 /**
  * First-time creation: emit a complete, opinionated default base.
+ *
+ * Daily Notes get a cards-view variant pre-populated with file-level columns
+ * (tags, links, backlinks) since they don't carry user-defined Object
+ * Properties. Every other type gets the standard table view.
  */
 function buildFreshBase(
 	type: ObjectTypeDefinition,
 	properties: ObjectProperty[]
 ): string {
+	const isDailyNotes = type.managed === "daily-notes";
+	const view: BaseView = isDailyNotes
+		? {
+				type: "cards",
+				name: `${GENERATED_VIEW_NAME_PREFIX}${type.pluralName}`,
+				order: ["file.tags", "file.links", "file.backlinks"],
+		  }
+		: {
+				type: "table",
+				name: `${GENERATED_VIEW_NAME_PREFIX}${type.pluralName}`,
+				order: ["file.name", ...properties.map((p) => p.name)],
+		  };
 	const doc: BaseDoc = {
 		filters: {
 			// `file.inFolder` matches any file under the folder, including the
@@ -109,13 +125,7 @@ function buildFreshBase(
 			],
 		},
 		properties: {},
-		views: [
-			{
-				type: "table",
-				name: `${GENERATED_VIEW_NAME_PREFIX}${type.pluralName}`,
-				order: ["file.name", ...properties.map((p) => p.name)],
-			},
-		],
+		views: [view],
 	};
 	for (const p of properties) {
 		(doc.properties as Record<string, BasePropertyEntry>)[p.name] = {

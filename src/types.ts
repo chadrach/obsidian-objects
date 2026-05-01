@@ -54,6 +54,15 @@ export interface ObjectTypeDefinition {
 	parentId?: string | null;
 	/** Locally-defined properties (does not include inherited ones). */
 	properties: ObjectProperty[];
+	/**
+	 * When true, new notes of this type get an empty `tags` frontmatter
+	 * entry. Obsidian reserves the `tags` property name for the Tags
+	 * property type, so it can't be expressed in the `properties` array.
+	 * Toggling this off does not strip tags from existing notes.
+	 */
+	showTags?: boolean;
+	/** As `showTags`, but for the reserved `aliases` property. */
+	showAliases?: boolean;
 	/** Creation + modification timestamps for bookkeeping. */
 	createdAt: number;
 	updatedAt: number;

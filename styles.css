@@ -1,8 +1,31 @@
 /* Obsidian Objects — plugin styles */
 
 .obsidian-objects-modal .modal-content {
+  /* dvh shrinks when an on-screen keyboard appears (mobile), so the modal
+     content stays scrollable instead of being hidden behind the keyboard.
+     The vh fallback keeps older WebViews working. */
   max-height: 70vh;
+  max-height: 70dvh;
   overflow-y: auto;
+}
+
+.obsidian-objects-modal.modal {
+  max-height: 90vh;
+  max-height: 90dvh;
+}
+
+.obsidian-objects-prop-toggles {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0.6rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.obsidian-objects-prop-toggles .setting-item {
+  border-top: none;
+  padding-top: 0.4rem;
+  padding-bottom: 0.4rem;
 }
 
 .obsidian-objects-modal__footer {

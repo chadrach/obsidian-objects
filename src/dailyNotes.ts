@@ -78,5 +78,8 @@ async function removeManagedDailyNotesType(
 		.getTypes()
 		.find((t: ObjectTypeDefinition) => t.managed === "daily-notes");
 	if (!existing) return;
-	await manager.deleteType(existing.id);
+	// Delete the auto-generated .base file too so a subsequent toggle-on
+	// regenerates it from scratch — the user-facing way to refresh the
+	// default Daily Notes view template.
+	await manager.deleteType(existing.id, { deleteBaseFile: true });
 }

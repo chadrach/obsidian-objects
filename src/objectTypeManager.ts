@@ -132,6 +132,8 @@ export class ObjectTypeManager {
 		parentId?: string | null;
 		properties?: ObjectProperty[];
 		managed?: "daily-notes" | null;
+		showTags?: boolean;
+		showAliases?: boolean;
 	}): Promise<ObjectTypeDefinition> {
 		const folderPath = normalizePath(input.folderPath);
 		if (this.getTypeByFolder(folderPath)) {
@@ -149,6 +151,8 @@ export class ObjectTypeManager {
 			basePath: basePathFor(folderPath, input.pluralName),
 			parentId: input.parentId ?? null,
 			properties: input.properties ?? [],
+			showTags: input.showTags ?? false,
+			showAliases: input.showAliases ?? false,
 			managed: input.managed ?? null,
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
@@ -170,7 +174,13 @@ export class ObjectTypeManager {
 		patch: Partial<
 			Pick<
 				ObjectTypeDefinition,
-				"name" | "pluralName" | "icon" | "parentId" | "properties"
+				| "name"
+				| "pluralName"
+				| "icon"
+				| "parentId"
+				| "properties"
+				| "showTags"
+				| "showAliases"
 			>
 		>,
 		options: { removeDeletedFromNotes?: boolean } = {}
@@ -185,6 +195,9 @@ export class ObjectTypeManager {
 		if (patch.icon !== undefined) type.icon = patch.icon;
 		if (patch.parentId !== undefined) type.parentId = patch.parentId;
 		if (patch.properties !== undefined) type.properties = patch.properties;
+		if (patch.showTags !== undefined) type.showTags = patch.showTags;
+		if (patch.showAliases !== undefined)
+			type.showAliases = patch.showAliases;
 		type.updatedAt = Date.now();
 
 		let mutation: PropertyMutation | undefined;
@@ -450,6 +463,13 @@ export class ObjectTypeManager {
 		for (const p of properties) {
 			fm[p.name] = propertyInitialValue(p);
 		}
+		// Tags / Aliases are reserved property names in Obsidian (only the
+		// "tags" key uses the Tags property type, only "aliases" uses the
+		// Aliases type), so they're driven by per-type flags rather than
+		// regular property entries. Inherited from any ancestor in the chain.
+		const chain = this.getTypeChain(type);
+		if (chain.some((t) => t.showTags)) fm.tags = [];
+		if (chain.some((t) => t.showAliases)) fm.aliases = [];
 		const path = uniquePath(
 			this.app.vault,
 			type.folderPath,
@@ -696,12 +716,34 @@ async function reconcileBaseFilePath(
 
 function normalizeData(data: ObjectsPluginData | null): ObjectsPluginData {
 	if (!data) return structuredClone(DEFAULT_DATA);
-	return {
+	const merged: ObjectsPluginData = {
 		...structuredClone(DEFAULT_DATA),
 		...data,
 		settings: { ...DEFAULT_DATA.settings, ...data.settings },
 		types: data.types ?? [],
 	};
+	// Older plugin versions allowed regular properties of type "tags" /
+	// "aliases" because Obsidian's reserved property handling wasn't well
+	// documented. Strip them on load and convert to the corresponding flag
+	// so the editor UI never surfaces them as user-defined properties.
+	for (const t of merged.types) {
+		let migratedTags = false;
+		let migratedAliases = false;
+		t.properties = t.properties.filter((p) => {
+			if (p.type === "tags") {
+				migratedTags = true;
+				return false;
+			}
+			if (p.type === "aliases") {
+				migratedAliases = true;
+				return false;
+			}
+			return true;
+		});
+		if (migratedTags) t.showTags = true;
+		if (migratedAliases) t.showAliases = true;
+	}
+	return merged;
 }
 
 export function basePathFor(folderPath: string, pluralName: string): string {
