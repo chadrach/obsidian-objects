@@ -95,7 +95,8 @@ export class ObjectsSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Register Daily Notes as an object type")
 			.setDesc(
-				"Mirror the Daily Notes core plugin as a managed object type so typed links and icons work the same as any other type."
+				"Mirror the Daily Notes core plugin as a managed object type so typed links and icons work the same as any other type. " +
+					"If you change your Daily Notes plugin settings (folder, format, template), disable and re-enable this option to refresh the auto-generated overview."
 			)
 			.addToggle((t) =>
 				t

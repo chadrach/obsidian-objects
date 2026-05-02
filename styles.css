@@ -177,6 +177,10 @@
   display: inline-flex;
 }
 
+.obsidian-objects-prop-collision.is-error {
+  color: var(--text-error);
+}
+
 .obsidian-objects-prop-row input,
 .obsidian-objects-prop-row select {
   width: 100%;

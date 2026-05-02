@@ -107,13 +107,25 @@ function buildFreshBase(
 		? {
 				type: "cards",
 				name: `${GENERATED_VIEW_NAME_PREFIX}${type.pluralName}`,
-				order: ["file.tags", "file.links", "file.backlinks"],
+				order: [
+					"file.name",
+					"file.tags",
+					"file.links",
+					"file.backlinks",
+				],
 		  }
 		: {
 				type: "table",
 				name: `${GENERATED_VIEW_NAME_PREFIX}${type.pluralName}`,
 				order: ["file.name", ...properties.map((p) => p.name)],
 		  };
+	// Tags / Aliases are surfaced like any other Object Property when the
+	// per-type flag is on: visible in the default view's order list and
+	// declared in the top-level properties map. Daily Notes already has
+	// `file.tags` in the cards view so we don't double-add for that case.
+	if (!isDailyNotes && type.showTags) view.order!.push("tags");
+	if (!isDailyNotes && type.showAliases) view.order!.push("aliases");
+
 	const doc: BaseDoc = {
 		filters: {
 			// `file.inFolder` matches any file under the folder, including the
@@ -130,6 +142,16 @@ function buildFreshBase(
 	for (const p of properties) {
 		(doc.properties as Record<string, BasePropertyEntry>)[p.name] = {
 			displayName: p.name,
+		};
+	}
+	if (!isDailyNotes && type.showTags) {
+		(doc.properties as Record<string, BasePropertyEntry>)["tags"] = {
+			displayName: "Tags",
+		};
+	}
+	if (!isDailyNotes && type.showAliases) {
+		(doc.properties as Record<string, BasePropertyEntry>)["aliases"] = {
+			displayName: "Aliases",
 		};
 	}
 	const banner =
@@ -165,9 +187,45 @@ function updateExistingBase(
 	updateFolderFilter(parsed, type.folderPath);
 	updatePropertiesMap(parsed, properties, mutation);
 	updateGeneratedView(parsed, type, properties, mutation);
+	reconcileReservedProperties(parsed, type);
 
 	const dumped = dumpYaml(parsed);
 	return (banner ? banner : "") + dumped;
+}
+
+/**
+ * Add or remove the reserved `tags` / `aliases` entries from the .base
+ * doc's properties map and default view's order list to match the current
+ * type flags. Daily Notes is exempt — its cards view uses `file.tags`
+ * instead of the frontmatter `tags` key.
+ */
+function reconcileReservedProperties(
+	doc: BaseDoc,
+	type: ObjectTypeDefinition
+): void {
+	if (type.managed === "daily-notes") return;
+	const map = doc.properties ?? {};
+	const generatedName = `${GENERATED_VIEW_NAME_PREFIX}${type.pluralName}`;
+	const view = (doc.views ?? []).find(
+		(v) => v.name === generatedName
+	) as BaseView | undefined;
+	const order = view?.order;
+
+	const apply = (key: string, displayName: string, want: boolean): void => {
+		if (want) {
+			if (map[key] === undefined) map[key] = { displayName };
+			if (order && !order.includes(key)) order.push(key);
+		} else {
+			delete map[key];
+			if (order) {
+				const idx = order.indexOf(key);
+				if (idx >= 0) order.splice(idx, 1);
+			}
+		}
+	};
+	apply("tags", "Tags", !!type.showTags);
+	apply("aliases", "Aliases", !!type.showAliases);
+	doc.properties = map;
 }
 
 function updateFolderFilter(doc: BaseDoc, folderPath: string): void {

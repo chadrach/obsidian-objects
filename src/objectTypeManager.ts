@@ -5,6 +5,7 @@ import {
 	ObjectTypeDefinition,
 	ObjectsPluginData,
 	PluginSettings,
+	PropertyType,
 	newId,
 } from "./types";
 import {
@@ -159,6 +160,7 @@ export class ObjectTypeManager {
 		};
 		this.data.types.push(type);
 		await this.rewriteBase(type);
+		this.registerObsidianPropertyTypes();
 		await this.save();
 		return type;
 	}
@@ -211,6 +213,7 @@ export class ObjectTypeManager {
 		}
 
 		await this.rewriteBase(type, mutation);
+		this.registerObsidianPropertyTypes();
 		await this.save();
 		return type;
 	}
@@ -577,6 +580,52 @@ export class ObjectTypeManager {
 		}
 	}
 
+	/**
+	 * Tell Obsidian's metadata-type manager which Obsidian property type to
+	 * use for each frontmatter key declared by this plugin. Without this,
+	 * Obsidian treats every property as plain text in the Properties editor
+	 * — the user picks "Date" / "Number" / "Checkbox" in the modal but gets
+	 * a text input. Mapping is keyed off the frontmatter name, so it
+	 * affects every note that uses the same property name globally.
+	 *
+	 * Tags / Aliases are registered when the per-type flag is on. Sub-types
+	 * inherit through the parent chain.
+	 *
+	 * Wrapped in try/catch because `metadataTypeManager` is internal API and
+	 * a future Obsidian version could rename the method without notice.
+	 */
+	registerObsidianPropertyTypes(): void {
+		const mtm = (
+			this.app as unknown as {
+				metadataTypeManager?: {
+					setType?: (key: string, type: string) => unknown;
+				};
+			}
+		).metadataTypeManager;
+		if (!mtm?.setType) return;
+
+		const set = (key: string, obsidianType: string): void => {
+			try {
+				mtm.setType!(key, obsidianType);
+			} catch (err) {
+				console.warn(
+					`Could not register property type "${key}" → "${obsidianType}"`,
+					err
+				);
+			}
+		};
+
+		for (const type of this.data.types) {
+			for (const p of this.getEffectiveProperties(type)) {
+				const obsidianType = mapToObsidianPropertyType(p.type);
+				if (obsidianType) set(p.name, obsidianType);
+			}
+			const chain = this.getTypeChain(type);
+			if (chain.some((t) => t.showTags)) set("tags", "tags");
+			if (chain.some((t) => t.showAliases)) set("aliases", "aliases");
+		}
+	}
+
 	// ----- diagnostics / broken references -----
 
 	getBrokenReferences(): Array<BrokenReference> {
@@ -749,6 +798,34 @@ function normalizeData(data: ObjectsPluginData | null): ObjectsPluginData {
 export function basePathFor(folderPath: string, pluralName: string): string {
 	const name = (pluralName || "Overview").replace(/[\\/:*?"<>|]/g, "");
 	return joinPath(folderPath, `${name}.base`);
+}
+
+/**
+ * Translate our internal PropertyType vocabulary into the strings Obsidian's
+ * `metadataTypeManager.setType` expects. Returns null for types we don't
+ * want to register (or that don't have an Obsidian counterpart).
+ */
+function mapToObsidianPropertyType(type: PropertyType): string | null {
+	switch (type) {
+		case "text":
+			return "text";
+		case "list":
+			return "multitext";
+		case "number":
+			return "number";
+		case "checkbox":
+			return "checkbox";
+		case "date":
+			return "date";
+		case "datetime":
+			return "datetime";
+		case "tags":
+			return "tags";
+		case "aliases":
+			return "aliases";
+		default:
+			return null;
+	}
 }
 
 export function propertyInitialValue(prop: ObjectProperty): unknown {

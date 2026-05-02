@@ -8,6 +8,7 @@ import {
 import { ObjectProperty, ObjectTypeDefinition } from "../types";
 import { ObjectTypeManager } from "../objectTypeManager";
 import { joinPath, uniquePath } from "../utils";
+import { trackVisualViewportForModal } from "../mobileViewport";
 
 type MappingAction = "keep" | "delete" | { mapTo: string };
 
@@ -32,6 +33,7 @@ export class ChangeObjectTypeModal extends Modal {
 	private mappings = new Map<string, MappingAction>();
 	private existingFm: Record<string, unknown> = {};
 	private targetPath: string;
+	private keyboardCleanup: (() => void) | null = null;
 
 	constructor(
 		app: App,
@@ -45,6 +47,7 @@ export class ChangeObjectTypeModal extends Modal {
 
 	onOpen(): void {
 		this.modalEl.addClass("obsidian-objects-modal");
+		this.keyboardCleanup = trackVisualViewportForModal(this.modalEl);
 		const cache = this.app.metadataCache.getFileCache(this.file);
 		const fm = (cache?.frontmatter ?? {}) as Record<string, unknown>;
 		// Strip the synthetic "position" key Obsidian adds to its cached
@@ -296,6 +299,11 @@ export class ChangeObjectTypeModal extends Modal {
 			console.error(err);
 			new Notice(`Failed to change object type: ${err}`);
 		}
+	}
+
+	onClose(): void {
+		this.keyboardCleanup?.();
+		this.keyboardCleanup = null;
 	}
 }
 

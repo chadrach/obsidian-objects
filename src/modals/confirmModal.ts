@@ -1,4 +1,5 @@
 import { App, Modal, Setting } from "obsidian";
+import { trackVisualViewportForModal } from "../mobileViewport";
 
 export interface ConfirmOptions {
 	title: string;
@@ -25,6 +26,7 @@ export function confirmAction(
 
 class ConfirmModal extends Modal {
 	private resolved = false;
+	private keyboardCleanup: (() => void) | null = null;
 
 	constructor(
 		app: App,
@@ -37,6 +39,8 @@ class ConfirmModal extends Modal {
 	}
 
 	onOpen(): void {
+		this.modalEl.addClass("obsidian-objects-modal");
+		this.keyboardCleanup = trackVisualViewportForModal(this.modalEl);
 		this.titleEl.setText(this.opts.title);
 		if (typeof this.opts.body === "string") {
 			this.contentEl.createEl("p", { text: this.opts.body });
@@ -64,6 +68,8 @@ class ConfirmModal extends Modal {
 	}
 
 	onClose(): void {
+		this.keyboardCleanup?.();
+		this.keyboardCleanup = null;
 		if (!this.resolved) this.resolve(null);
 	}
 

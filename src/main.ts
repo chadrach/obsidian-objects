@@ -158,6 +158,9 @@ export default class ObjectsPlugin extends Plugin {
 		// --- Daily Notes integration ---------------------------------
 		this.app.workspace.onLayoutReady(() => {
 			void this.refreshDailyNotesType();
+			// Register Obsidian property types after layout is ready so
+			// metadataTypeManager has finished its own initialization.
+			this.manager.registerObsidianPropertyTypes();
 		});
 	}
 

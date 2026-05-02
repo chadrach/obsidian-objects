@@ -7,6 +7,7 @@ import {
 	TFile,
 	TFolder,
 	setIcon,
+	setTooltip,
 } from "obsidian";
 import {
 	ObjectProperty,
@@ -18,6 +19,7 @@ import { ObjectTypeManager } from "../objectTypeManager";
 import { confirmAction } from "./confirmModal";
 import { FolderPickerModal } from "../folderPicker";
 import { joinPath, safeFolderName } from "../utils";
+import { trackVisualViewportForModal } from "../mobileViewport";
 
 // Tags and Aliases are intentionally excluded — Obsidian reserves the
 // "tags" and "aliases" frontmatter keys for the Tags / Aliases property
@@ -52,6 +54,7 @@ const PROPERTY_TYPES: Array<{ value: PropertyType; label: string }> = [
 export class ObjectTypeSettingsModal extends Modal {
 	private screen: "list" | "edit" = "list";
 	private draft: TypeDraft | null = null;
+	private keyboardCleanup: (() => void) | null = null;
 
 	constructor(
 		app: App,
@@ -66,6 +69,7 @@ export class ObjectTypeSettingsModal extends Modal {
 
 	onOpen(): void {
 		this.modalEl.addClass("obsidian-objects-modal");
+		this.keyboardCleanup = trackVisualViewportForModal(this.modalEl);
 		if (this.opts.initialTypeId) {
 			const type = this.manager.getTypeById(this.opts.initialTypeId);
 			if (type) {
@@ -82,6 +86,11 @@ export class ObjectTypeSettingsModal extends Modal {
 			this.screen = "edit";
 		}
 		this.render();
+	}
+
+	onClose(): void {
+		this.keyboardCleanup?.();
+		this.keyboardCleanup = null;
 	}
 
 	private render(): void {
@@ -485,14 +494,40 @@ export class ObjectTypeSettingsModal extends Modal {
 				cls: "obsidian-objects-prop-collision",
 			});
 			setIcon(collisionIcon, "info");
+			// Tap-to-show on mobile is handled by Obsidian's setTooltip;
+			// pure aria-label only fires on hover, which doesn't exist on
+			// touch devices. Tapping the icon now toggles the tooltip too
+			// so the warning is reachable on mobile.
+			collisionIcon.addEventListener("click", (evt) => {
+				evt.stopPropagation();
+				const tip = collisionIcon.getAttribute("data-tooltip-text");
+				if (tip) new Notice(tip);
+			});
 
 			const updateCollision = () => {
 				const name = nameInput.value.trim();
 				if (!name) {
 					collisionIcon.removeClass("is-visible");
-					collisionIcon.removeAttribute("aria-label");
+					collisionIcon.removeAttribute("data-tooltip-text");
+					setTooltip(collisionIcon, "");
 					return;
 				}
+				const lower = name.toLowerCase();
+				if (lower === "tags" || lower === "aliases") {
+					const message =
+						`"${name}" is reserved by Obsidian. ` +
+						`Use the "Show ${lower === "tags" ? "Tags" : "Aliases"} property by default" toggle above instead — ` +
+						`saving with this name will be rejected.`;
+					setTooltip(collisionIcon, message);
+					collisionIcon.setAttribute(
+						"data-tooltip-text",
+						message
+					);
+					collisionIcon.addClass("is-visible");
+					collisionIcon.addClass("is-error");
+					return;
+				}
+				collisionIcon.removeClass("is-error");
 				const conflicts = this.manager
 					.getTypes()
 					.filter((t) => t.id !== draft.existingId)
@@ -501,23 +536,26 @@ export class ObjectTypeSettingsModal extends Modal {
 							.getEffectiveProperties(t)
 							.some(
 								(p) =>
-									p.name.toLowerCase() ===
-									name.toLowerCase()
+									p.name.toLowerCase() === lower
 							)
 					);
 				if (conflicts.length > 0) {
 					const typeList = conflicts
 						.map((t) => t.name)
 						.join(", ");
-					collisionIcon.setAttribute(
-						"aria-label",
+					const message =
 						`"${name}" is also defined on: ${typeList}. ` +
-							`Sharing a name means Bases views can display both types' values in the same column.`
+						`Sharing a name means Bases views can display both types' values in the same column.`;
+					setTooltip(collisionIcon, message);
+					collisionIcon.setAttribute(
+						"data-tooltip-text",
+						message
 					);
 					collisionIcon.addClass("is-visible");
 				} else {
 					collisionIcon.removeClass("is-visible");
-					collisionIcon.removeAttribute("aria-label");
+					collisionIcon.removeAttribute("data-tooltip-text");
+					setTooltip(collisionIcon, "");
 				}
 			};
 
@@ -550,10 +588,17 @@ export class ObjectTypeSettingsModal extends Modal {
 					text: "No link",
 					value: "",
 				});
+				// Self-links are allowed — e.g. a Person type can have a
+				// "Family" property that points back at Person — so we don't
+				// exclude the type being edited from the dropdown.
 				for (const t of this.manager.getTypes()) {
-					if (t.id === draft.existingId) continue;
+					if (t.managed === "daily-notes") continue;
+					const label =
+						t.id === draft.existingId
+							? `${t.name} (this type)`
+							: t.name;
 					const opt = linkSelect.createEl("option", {
-						text: t.name,
+						text: label,
 						value: t.id,
 					});
 					if (prop.linkedTypeId === t.id) opt.selected = true;
@@ -640,6 +685,26 @@ export class ObjectTypeSettingsModal extends Modal {
 		const names = cleaned.map((p) => p.name.toLowerCase());
 		if (new Set(names).size !== names.length) {
 			new Notice("Property names must be unique.");
+			return;
+		}
+		// Reserved-name guard: Obsidian keys "tags" and "aliases" off the
+		// frontmatter property type, so a user-defined property with either
+		// name conflicts with the reserved Tags / Aliases types and the
+		// per-type toggle. Ask the user to use the toggle instead.
+		const reserved = cleaned.find(
+			(p) =>
+				p.name.toLowerCase() === "tags" ||
+				p.name.toLowerCase() === "aliases"
+		);
+		if (reserved) {
+			new Notice(
+				`"${reserved.name}" is reserved by Obsidian. ` +
+					`Remove this property and use the "Show ${
+						reserved.name.toLowerCase() === "tags"
+							? "Tags"
+							: "Aliases"
+					} property by default" toggle above instead.`
+			);
 			return;
 		}
 
