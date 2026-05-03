@@ -19,7 +19,7 @@ import { ObjectsSettingTab } from "./settingTab";
 import { syncDailyNotesType } from "./dailyNotes";
 import { buildLinkIconExtension } from "./cm/linkIconExtension";
 import { MentionPopup } from "./mentionPopup";
-import { confirmAction } from "./modals/confirmModal";
+
 
 /**
  * Entry point for the Obsidian Objects plugin.
@@ -217,7 +217,7 @@ export default class ObjectsPlugin extends Plugin {
 		if (type) {
 			menu.addItem((item: MenuItem) => {
 				item
-					.setTitle(`Create new ${type.name.toLowerCase()}`)
+					.setTitle(`Create new ${type.name}`)
 					.setIcon("file-plus")
 					.onClick(() => void this.createNewObjectFromMenu(type.id));
 			});
@@ -282,41 +282,27 @@ export default class ObjectsPlugin extends Plugin {
 	private async createNewObjectFromMenu(typeId: string): Promise<void> {
 		const type = this.manager.getTypeById(typeId);
 		if (!type) return;
-		let noteName = "";
-		const choice = await confirmAction(this.app, {
-			title: `Create new ${type.name}`,
-			body: (el) => {
-				const input = el.createEl("input", {
-					type: "text",
-					cls: "obsidian-objects-new-note-input",
-				});
-				input.placeholder = `${type.name} title…`;
-				input.style.width = "100%";
-				input.style.marginTop = "0.5rem";
-				input.addEventListener("input", () => {
-					noteName = input.value;
-				});
-				// Allow Enter key to submit
-				input.addEventListener("keydown", (evt) => {
-					if (evt.key === "Enter") {
-						evt.preventDefault();
-						(el.closest(".modal") as HTMLElement | null)
-							?.querySelector<HTMLButtonElement>(".mod-cta")
-							?.click();
-					}
-				});
-				// Auto-focus when modal opens
-				setTimeout(() => input.focus(), 50);
-			},
-			confirmText: "Create",
-		});
-		if (choice !== "confirm") return;
-		const title = noteName.trim() || type.name;
+		let file: TFile;
 		try {
-			const file = await this.manager.createObjectNote(type, title);
-			await this.app.workspace.getLeaf().openFile(file);
+			file = await this.manager.createObjectNote(type, type.name);
 		} catch (err) {
 			new Notice(`Failed to create note: ${err}`);
+			return;
+		}
+		const leaf = this.app.workspace.getLeaf();
+		await leaf.openFile(file);
+		// Mimic Obsidian's native new-note UX: focus the inline title and
+		// select all so the user can immediately type the real name.
+		const titleEl = leaf.view.containerEl.querySelector<HTMLElement>(
+			".inline-title"
+		);
+		if (titleEl) {
+			titleEl.focus();
+			const sel = window.getSelection();
+			const range = document.createRange();
+			range.selectNodeContents(titleEl);
+			sel?.removeAllRanges();
+			sel?.addRange(range);
 		}
 	}
 
