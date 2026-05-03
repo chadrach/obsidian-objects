@@ -528,9 +528,19 @@ export class ObjectTypeSettingsModal extends Modal {
 					return;
 				}
 				collisionIcon.removeClass("is-error");
+				// Get all child types of the current type (if editing)
+				const childTypeIds = new Set<string>();
+				if (draft.existingId) {
+					for (const t of this.manager.getTypes()) {
+						if (t.parentId === draft.existingId) {
+							childTypeIds.add(t.id);
+						}
+					}
+				}
 				const conflicts = this.manager
 					.getTypes()
 					.filter((t) => t.id !== draft.existingId)
+					.filter((t) => !childTypeIds.has(t.id))
 					.filter((t) =>
 						this.manager
 							.getEffectiveProperties(t)
@@ -545,7 +555,8 @@ export class ObjectTypeSettingsModal extends Modal {
 						.join(", ");
 					const message =
 						`"${name}" is also defined on: ${typeList}. ` +
-						`Sharing a name means Bases views can display both types' values in the same column.`;
+						`Sharing a name means Bases views can display both types' values in the same column. ` +
+						`Changes made to the property type will apply globally to all properties of the same name and may result in syntax errors.`;
 					setTooltip(collisionIcon, message);
 					collisionIcon.setAttribute(
 						"data-tooltip-text",

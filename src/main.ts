@@ -151,6 +151,18 @@ export default class ObjectsPlugin extends Plugin {
 				editor.setCursor({ line: cursor.line, ch: cursor.ch + 1 });
 			},
 		});
+		this.addCommand({
+			id: "open-object-mention-popup",
+			name: "Open object mention popup (mobile)",
+			editorCallback: (editor) => {
+				const cursor = editor.getCursor();
+				const trigger = this.manager.getSettings().triggerChar || "@";
+				// Insert the trigger character and position cursor after it.
+				// The EditorSuggest will automatically detect and show the popup.
+				editor.replaceRange(trigger, cursor);
+				editor.setCursor({ line: cursor.line, ch: cursor.ch + 1 });
+			},
+		});
 
 		// --- Settings tab --------------------------------------------
 		this.addSettingTab(new ObjectsSettingTab(this.app, this));
