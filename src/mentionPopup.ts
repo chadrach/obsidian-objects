@@ -147,14 +147,18 @@ export class MentionPopup {
 			this.session = this.startSession(host, triggerOffset);
 		} else {
 			this.session.triggerOffset = triggerOffset;
-			// Re-resolve implicit scope on every input — the active file
-			// can change, and Bases cells share a host but rotate their
-			// column context.
-			this.session.implicitTypeId = detectImplicitType(
-				this.app,
-				this.manager,
-				host
-			);
+			// Only re-detect the implicit scope if we don't already have one.
+			// The Bases native property-value picker (which exposes the column
+			// via data-property-key) is removed from the DOM as soon as our
+			// popup takes over, so re-querying on every keystroke would clear
+			// the scope mid-session and revert results to "all types".
+			if (!this.session.implicitTypeId) {
+				this.session.implicitTypeId = detectImplicitType(
+					this.app,
+					this.manager,
+					host
+				);
+			}
 		}
 		this.refresh(rawQuery);
 	}
