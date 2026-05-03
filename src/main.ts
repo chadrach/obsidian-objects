@@ -1,6 +1,7 @@
 import {
 	Menu,
 	MenuItem,
+	Notice,
 	Plugin,
 	TFile,
 	TFolder,
@@ -18,6 +19,7 @@ import { ObjectsSettingTab } from "./settingTab";
 import { syncDailyNotesType } from "./dailyNotes";
 import { buildLinkIconExtension } from "./cm/linkIconExtension";
 import { MentionPopup } from "./mentionPopup";
+import { confirmAction } from "./modals/confirmModal";
 
 /**
  * Entry point for the Obsidian Objects plugin.
@@ -215,6 +217,12 @@ export default class ObjectsPlugin extends Plugin {
 		if (type) {
 			menu.addItem((item: MenuItem) => {
 				item
+					.setTitle(`Create new ${type.name.toLowerCase()}`)
+					.setIcon("file-plus")
+					.onClick(() => void this.createNewObjectFromMenu(type.id));
+			});
+			menu.addItem((item: MenuItem) => {
+				item
 					.setTitle("Open type overview (.base)")
 					.setIcon("layout-grid")
 					.onClick(() => void this.openBaseFor(type.id));
@@ -268,6 +276,47 @@ export default class ObjectsPlugin extends Plugin {
 		const file = this.app.vault.getAbstractFileByPath(type.basePath);
 		if (file instanceof TFile) {
 			await this.app.workspace.getLeaf().openFile(file);
+		}
+	}
+
+	private async createNewObjectFromMenu(typeId: string): Promise<void> {
+		const type = this.manager.getTypeById(typeId);
+		if (!type) return;
+		let noteName = "";
+		const choice = await confirmAction(this.app, {
+			title: `Create new ${type.name}`,
+			body: (el) => {
+				const input = el.createEl("input", {
+					type: "text",
+					cls: "obsidian-objects-new-note-input",
+				});
+				input.placeholder = `${type.name} title…`;
+				input.style.width = "100%";
+				input.style.marginTop = "0.5rem";
+				input.addEventListener("input", () => {
+					noteName = input.value;
+				});
+				// Allow Enter key to submit
+				input.addEventListener("keydown", (evt) => {
+					if (evt.key === "Enter") {
+						evt.preventDefault();
+						(el.closest(".modal") as HTMLElement | null)
+							?.querySelector<HTMLButtonElement>(".mod-cta")
+							?.click();
+					}
+				});
+				// Auto-focus when modal opens
+				setTimeout(() => input.focus(), 50);
+			},
+			confirmText: "Create",
+		});
+		if (choice !== "confirm") return;
+		const title = noteName.trim() || type.name;
+		try {
+			const file = await this.manager.createObjectNote(type, title);
+			await this.app.workspace.getLeaf().openFile(file);
+		} catch (err) {
+			new Notice(`Failed to create note: ${err}`);
 		}
 	}
 
