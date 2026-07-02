@@ -494,18 +494,27 @@ export default class ObjectsPlugin extends Plugin {
 			const to = editor.getCursor("to");
 			const sourcePath = view.file?.path ?? "";
 			this.selectionSuggest?.show(editor, from, to, sel, sourcePath, cmView);
+		} else if (cmView) {
+			// Insert the trigger character as a CM6 transaction tagged
+			// "input.type" — Obsidian's EditorSuggest bridge only opens on
+			// transactions with that userEvent, so a plain editor.replaceRange
+			// (or a synthetic InputEvent) does not open the popup on mobile.
+			const cursor = editor.getCursor();
+			const trigger = this.manager.getSettings().triggerChar || "@";
+			const line = cmView.state.doc.line(cursor.line + 1);
+			const pos = line.from + cursor.ch;
+			cmView.dispatch({
+				changes: { from: pos, to: pos, insert: trigger },
+				selection: { anchor: pos + trigger.length },
+				userEvent: "input.type",
+			});
 		} else {
+			// Fallback for editors without a CM6 view (e.g. source-mode on
+			// very old Obsidian). The suggest may not open immediately.
 			const cursor = editor.getCursor();
 			const trigger = this.manager.getSettings().triggerChar || "@";
 			editor.replaceRange(trigger, cursor);
 			editor.setCursor({ line: cursor.line, ch: cursor.ch + 1 });
-			// On mobile the EditorSuggest is only triggered by user input events,
-			// not programmatic document changes. Dispatching a synthetic input
-			// event on the CM6 content node causes the suggest machinery to
-			// re-check and open the popup immediately.
-			cmView?.contentDOM.dispatchEvent(
-				new InputEvent("input", { bubbles: true, cancelable: true })
-			);
 		}
 	}
 

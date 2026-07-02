@@ -61,6 +61,11 @@ export class SelectionSuggest {
 		this.positionPopup(this.cmViewRef, this.from);
 	};
 
+	private readonly onWindowScroll = (): void => {
+		if (!this.popupEl || !this.cmViewRef || !this.from) return;
+		this.positionPopup(this.cmViewRef, this.from);
+	};
+
 	constructor(
 		private readonly app: App,
 		private readonly manager: ObjectTypeManager
@@ -114,6 +119,7 @@ export class SelectionSuggest {
 		document.addEventListener("mousedown", this.onDocMousedown, true);
 		window.visualViewport?.addEventListener("resize", this.onViewportChange);
 		window.visualViewport?.addEventListener("scroll", this.onViewportChange);
+		window.addEventListener("scroll", this.onWindowScroll, true);
 
 		this.positionPopup(cmView, from);
 		this.refresh();
@@ -135,6 +141,7 @@ export class SelectionSuggest {
 		document.removeEventListener("mousedown", this.onDocMousedown, true);
 		window.visualViewport?.removeEventListener("resize", this.onViewportChange);
 		window.visualViewport?.removeEventListener("scroll", this.onViewportChange);
+		window.removeEventListener("scroll", this.onWindowScroll, true);
 		this.cmViewRef = null;
 		this.filter = null;
 	}
@@ -360,8 +367,11 @@ export class SelectionSuggest {
 				this.highlighted = idx;
 				this.renderList();
 			});
-			// mousedown (not click) so we can preventDefault and keep input focused.
-			row.addEventListener("mousedown", (evt) => {
+			// pointerdown fires before the synthetic mouseenter on touch, so
+			// selecting a row works with a single tap on mobile (mousedown fires
+			// after the hover-triggered re-render that causes the double-tap
+			// issue). preventDefault keeps focus on the search input.
+			row.addEventListener("pointerdown", (evt) => {
 				evt.preventDefault();
 				evt.stopPropagation();
 				void this.selectSuggestion(s);

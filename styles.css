@@ -403,8 +403,8 @@
   overflow-y: auto;
   background: var(--background-primary);
   border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18);
+  border-radius: var(--radius-m, 6px);
+  box-shadow: var(--shadow-l, 0 4px 18px rgba(0, 0, 0, 0.18));
   padding: 0.25rem 0;
 }
 
@@ -431,8 +431,9 @@
   overflow: visible;   /* let the inner list handle its own scroll */
   max-height: none;    /* don't let the container itself scroll */
   padding: 0.35rem 0.35rem 0.2rem;
-  min-width: 240px;
-  max-width: 380px;
+  /* Match native Obsidian suggest width and shape */
+  min-width: 320px;
+  max-width: min(480px, 95vw);
 }
 
 .obsidian-objects-sel-suggest__input {
@@ -442,7 +443,7 @@
   margin-bottom: 0.2rem;
   background: var(--background-secondary);
   border: 1px solid var(--background-modifier-border);
-  border-radius: 4px;
+  border-radius: var(--radius-s, 4px);
   color: var(--text-normal);
   font-size: 0.95em;
   box-sizing: border-box;
