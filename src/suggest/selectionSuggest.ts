@@ -116,6 +116,7 @@ export class SelectionSuggest {
 		this.listEl = list;
 
 		document.body.appendChild(popup);
+		cmView.dom.addClass("obsidian-objects-sel-active");
 		document.addEventListener("mousedown", this.onDocMousedown, true);
 		window.visualViewport?.addEventListener("resize", this.onViewportChange);
 		window.visualViewport?.addEventListener("scroll", this.onViewportChange);
@@ -138,6 +139,7 @@ export class SelectionSuggest {
 		this.popupEl = null;
 		this.inputEl = null;
 		this.listEl = null;
+		this.cmViewRef?.dom.removeClass("obsidian-objects-sel-active");
 		document.removeEventListener("mousedown", this.onDocMousedown, true);
 		window.visualViewport?.removeEventListener("resize", this.onViewportChange);
 		window.visualViewport?.removeEventListener("scroll", this.onViewportChange);
