@@ -204,6 +204,15 @@
   color: var(--text-error);
 }
 
+/* Date / datetime default wrapper — stacks the mode select and the optional
+   fixed-value input vertically within the same grid column. */
+.obsidian-objects-prop-row__date-default {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  width: 100%;
+}
+
 .obsidian-objects-prop-add {
   margin-top: 0.25rem;
   padding: 0.3rem 0.6rem;

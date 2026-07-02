@@ -587,7 +587,18 @@ export class ObjectTypeSettingsModal extends Modal {
 				if (t.value === prop.type) opt.selected = true;
 			}
 			typeSelect.addEventListener("change", () => {
-				prop.type = typeSelect.value as PropertyType;
+				const next = typeSelect.value as PropertyType;
+				// Clear the "current date/time" sentinel when the user changes
+				// a date/datetime property to a different type — @now isn't a
+				// valid or meaningful default for text, number, checkbox, etc.
+				if (
+					prop.defaultValue === "@now" &&
+					next !== "date" &&
+					next !== "datetime"
+				) {
+					prop.defaultValue = null;
+				}
+				prop.type = next;
 				this.renderProperties(draft, container);
 			});
 
@@ -619,20 +630,86 @@ export class ObjectTypeSettingsModal extends Modal {
 				});
 			}
 
-			const defaultInput = row.createEl("input", {
-				type: "text",
-				cls: "obsidian-objects-prop-row__default",
-			});
-			defaultInput.placeholder = "Default";
-			if (
-				prop.defaultValue !== undefined &&
-				prop.defaultValue !== null
-			) {
-				defaultInput.value = String(prop.defaultValue);
+			if (prop.type === "date" || prop.type === "datetime") {
+				// For date / datetime we offer three modes via a select:
+				//   • No default   → defaultValue = null
+				//   • Current date/time → defaultValue = "@now" (resolved at
+				//     note-creation time to the actual local date/time)
+				//   • Fixed value  → defaultValue = user-supplied string
+				const wrap = row.createDiv({
+					cls: "obsidian-objects-prop-row__date-default",
+				});
+				const modeSelect = wrap.createEl("select");
+				modeSelect.createEl("option", {
+					text: "No default",
+					value: "",
+				});
+				modeSelect.createEl("option", {
+					text: "Current date/time",
+					value: "@now",
+				});
+				modeSelect.createEl("option", {
+					text: "Fixed value",
+					value: "fixed",
+				});
+
+				const fixedInput = wrap.createEl("input", {
+					type: "text",
+				});
+				fixedInput.placeholder =
+					prop.type === "datetime"
+						? "YYYY-MM-DDTHH:mm"
+						: "YYYY-MM-DD";
+
+				// Set initial state from the stored defaultValue.
+				if (prop.defaultValue === "@now") {
+					modeSelect.value = "@now";
+					fixedInput.hidden = true;
+				} else if (
+					prop.defaultValue !== null &&
+					prop.defaultValue !== undefined &&
+					prop.defaultValue !== ""
+				) {
+					modeSelect.value = "fixed";
+					fixedInput.value = String(prop.defaultValue);
+					fixedInput.hidden = false;
+				} else {
+					modeSelect.value = "";
+					fixedInput.hidden = true;
+				}
+
+				modeSelect.addEventListener("change", () => {
+					if (modeSelect.value === "@now") {
+						prop.defaultValue = "@now";
+						fixedInput.hidden = true;
+					} else if (modeSelect.value === "fixed") {
+						prop.defaultValue = fixedInput.value || null;
+						fixedInput.hidden = false;
+						fixedInput.focus();
+					} else {
+						prop.defaultValue = null;
+						fixedInput.hidden = true;
+					}
+				});
+				fixedInput.addEventListener("input", () => {
+					prop.defaultValue = fixedInput.value || null;
+				});
+			} else {
+				const defaultInput = row.createEl("input", {
+					type: "text",
+					cls: "obsidian-objects-prop-row__default",
+				});
+				defaultInput.placeholder = "Default";
+				if (
+					prop.defaultValue !== undefined &&
+					prop.defaultValue !== null
+				) {
+					defaultInput.value = String(prop.defaultValue);
+				}
+				defaultInput.addEventListener("input", () => {
+					prop.defaultValue = defaultInput.value || null;
+				});
 			}
-			defaultInput.addEventListener("input", () => {
-				prop.defaultValue = defaultInput.value || null;
-			});
 
 			const removeBtn = row.createEl("button", {
 				text: "×",

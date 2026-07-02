@@ -862,6 +862,11 @@ function mapToObsidianPropertyType(type: PropertyType): string | null {
 
 export function propertyInitialValue(prop: ObjectProperty): unknown {
 	if (prop.defaultValue !== undefined && prop.defaultValue !== null) {
+		if (prop.defaultValue === "@now") {
+			return prop.type === "datetime"
+				? currentLocalDatetime()
+				: currentLocalDate();
+		}
 		return prop.defaultValue;
 	}
 	switch (prop.type) {
@@ -879,4 +884,24 @@ export function propertyInitialValue(prop: ObjectProperty): unknown {
 		default:
 			return "";
 	}
+}
+
+/** Returns the current local date as `YYYY-MM-DD` (Obsidian date format). */
+function currentLocalDate(): string {
+	const d = new Date();
+	const y = d.getFullYear();
+	const m = String(d.getMonth() + 1).padStart(2, "0");
+	const day = String(d.getDate()).padStart(2, "0");
+	return `${y}-${m}-${day}`;
+}
+
+/** Returns the current local date+time as `YYYY-MM-DDTHH:mm` (Obsidian datetime format). */
+function currentLocalDatetime(): string {
+	const d = new Date();
+	const y = d.getFullYear();
+	const mo = String(d.getMonth() + 1).padStart(2, "0");
+	const day = String(d.getDate()).padStart(2, "0");
+	const h = String(d.getHours()).padStart(2, "0");
+	const min = String(d.getMinutes()).padStart(2, "0");
+	return `${y}-${mo}-${day}T${h}:${min}`;
 }
