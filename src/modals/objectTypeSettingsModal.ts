@@ -277,15 +277,36 @@ export class ObjectTypeSettingsModal extends Modal {
 				const list = banner.createEl("ul", {
 					cls: "obsidian-objects-banner__list",
 				});
+				let needsLocationPicker = false;
 				for (const issue of issues) {
-					list.createEl("li", { text: issue.detail });
+					// For a sub-type with a missing folder the correct
+					// location is fixed (inside the parent's folder), so
+					// the user can't re-point it. Surface a friendlier
+					// message and let Save recreate it automatically.
+					if (
+						issue.missing === "folder" &&
+						draft.parentId
+					) {
+						list.createEl("li", {
+							text: `Folder "${issue.expectedPath}" no longer exists. It will be recreated in its proper location the next time you save changes to this type.`,
+						});
+					} else {
+						list.createEl("li", { text: issue.detail });
+						if (issue.missing === "folder") {
+							needsLocationPicker = true;
+						}
+					}
 				}
-				const fix = banner.createDiv();
-				new ButtonComponent(fix)
-					.setButtonText("Pick replacement location…")
-					.onClick(() =>
-						this.openLocationPicker(draft, () => this.render())
-					);
+				if (needsLocationPicker) {
+					const fix = banner.createDiv();
+					new ButtonComponent(fix)
+						.setButtonText("Pick replacement location…")
+						.onClick(() =>
+							this.openLocationPicker(draft, () =>
+								this.render()
+							)
+						);
+				}
 			}
 		}
 

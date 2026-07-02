@@ -222,6 +222,11 @@ export class ObjectTypeManager {
 			);
 		}
 
+		// Recreate the folder if it was deleted — this is the self-healing
+		// path for sub-types whose folder was removed, since sub-type folders
+		// must live inside the parent and can't be re-pointed via the UI.
+		await ensureFolder(this.app.vault, type.folderPath);
+
 		if (options.typePropertyAction) {
 			const typeKey = this.data.settings.typePropertyName;
 			const qualifiedName = this.getQualifiedName(type);
