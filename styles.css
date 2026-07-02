@@ -394,43 +394,36 @@
   text-underline-offset: 2px;
 }
 
-/* Selection-link modal — opened when @ is triggered with text selected */
-.obsidian-objects-selection-link__input {
+/* Selection-aware @ popup (floats near cursor, has its own search input) */
+.obsidian-objects-sel-suggest {
+  /* Override the mention-popup's overflow so only the list scrolls. */
+  overflow-y: visible;
+  padding: 0.35rem 0.35rem 0.2rem;
+  min-width: 240px;
+  max-width: 380px;
+}
+
+.obsidian-objects-sel-suggest__input {
+  display: block;
   width: 100%;
-  padding: 0.4rem 0.6rem;
-  margin-bottom: 0.5rem;
+  padding: 0.3rem 0.5rem;
+  margin-bottom: 0.2rem;
   background: var(--background-secondary);
   border: 1px solid var(--background-modifier-border);
   border-radius: 4px;
   color: var(--text-normal);
-  font-size: 1em;
+  font-size: 0.95em;
   box-sizing: border-box;
 }
 
-.obsidian-objects-selection-link__input:focus {
+.obsidian-objects-sel-suggest__input:focus {
   outline: none;
   border-color: var(--interactive-accent);
 }
 
-.obsidian-objects-selection-link__list {
-  display: flex;
-  flex-direction: column;
-  max-height: 260px;
+.obsidian-objects-sel-suggest__list {
+  max-height: 240px;
   overflow-y: auto;
-}
-
-.obsidian-objects-selection-link__row {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.3rem 0.5rem;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.obsidian-objects-selection-link__row.is-selected,
-.obsidian-objects-selection-link__row:hover {
-  background: var(--background-modifier-hover);
 }
 
 /* Floating mention popup (Properties editor + Bases) */

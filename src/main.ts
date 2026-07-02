@@ -15,7 +15,7 @@ import { AtSuggest } from "./suggest/atSuggest";
 import { ObjectTypeSettingsModal } from "./modals/objectTypeSettingsModal";
 import { ChangeObjectTypeModal } from "./modals/changeObjectTypeModal";
 import { ApplyObjectTypeModal } from "./modals/applyObjectTypeModal";
-import { SelectionLinkModal } from "./modals/selectionLinkModal";
+import { SelectionSuggest } from "./suggest/selectionSuggest";
 import { LinkDecorator } from "./linkDecorator";
 import { ObjectsSettingTab } from "./settingTab";
 import { syncDailyNotesType } from "./dailyNotes";
@@ -44,6 +44,7 @@ export default class ObjectsPlugin extends Plugin {
 	linkDecorator: LinkDecorator | null = null;
 	private suggest: AtSuggest | null = null;
 	private mentionPopup: MentionPopup | null = null;
+	private selectionSuggest: SelectionSuggest | null = null;
 
 	async onload(): Promise<void> {
 		const loaded = (await this.loadData()) as ObjectsPluginData | null;
@@ -57,9 +58,15 @@ export default class ObjectsPlugin extends Plugin {
 		this.suggest = new AtSuggest(this.app, this.manager);
 		this.registerEditorSuggest(this.suggest);
 
-		// When the trigger character is pressed with text selected, intercept
-		// it entirely: prevent the @ from being inserted and open the
-		// SelectionLinkModal so the selected text stays in place.
+		// --- Selection-aware @ popup ----------------------------------
+		// When @ is pressed with text selected, intercept before the editor
+		// can replace the selection. Open a floating suggestion popup positioned
+		// near the cursor (matching the @ dropdown placement) while keeping the
+		// selected text in place. On pick the selection is replaced with the
+		// wikilink, using the selected text as the display name.
+		this.selectionSuggest = new SelectionSuggest(this.app, this.manager);
+		this.register(() => this.selectionSuggest?.destroy());
+
 		this.registerDomEvent(document, "keydown", (evt: KeyboardEvent) => {
 			if (evt.defaultPrevented) return;
 			const trigger = this.manager.getSettings().triggerChar || "@";
@@ -73,15 +80,19 @@ export default class ObjectsPlugin extends Plugin {
 			const from = editor.getCursor("from");
 			const to = editor.getCursor("to");
 			const sourcePath = view.file?.path ?? "";
-			new SelectionLinkModal(
-				this.app,
-				this.manager,
-				editor,
-				from,
-				to,
-				sel,
-				sourcePath
-			).open();
+			const cmView = (
+				editor as unknown as { cm?: EditorView }
+			).cm;
+			if (cmView) {
+				this.selectionSuggest?.show(
+					editor,
+					from,
+					to,
+					sel,
+					sourcePath,
+					cmView
+				);
+			}
 		});
 
 		// --- CodeMirror live-preview icon extension --------------------
