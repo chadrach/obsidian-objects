@@ -56,6 +56,22 @@ export default class ObjectsPlugin extends Plugin {
 		this.suggest = new AtSuggest(this.app, this.manager);
 		this.registerEditorSuggest(this.suggest);
 
+		// Capture any active text selection the moment the trigger character
+		// is pressed. By the time EditorSuggest.onTrigger fires, the editor
+		// has already replaced the selection with the trigger character, so we
+		// must snapshot it here and hand it to AtSuggest.
+		this.registerDomEvent(document, "keydown", (evt: KeyboardEvent) => {
+			if (evt.defaultPrevented) return;
+			const trigger = this.manager.getSettings().triggerChar || "@";
+			if (evt.key !== trigger) return;
+			const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+			if (!view) return;
+			const sel = view.editor.getSelection();
+			if (sel) {
+				this.suggest?.captureSelection(sel);
+			}
+		});
+
 		// --- CodeMirror live-preview icon extension --------------------
 		this.registerEditorExtension(
 			buildLinkIconExtension(this.app, this.manager)

@@ -24,11 +24,15 @@ type Suggestion =
 			kind: "note";
 			file: TFile;
 			type?: ObjectTypeDefinition;
+			/** When set, the wikilink is inserted as [[file|alias]]. */
+			alias?: string;
 	  }
 	| {
 			kind: "create";
 			type: ObjectTypeDefinition;
 			title: string;
+			/** When set, the wikilink is inserted as [[created-note|alias]]. */
+			alias?: string;
 	  }
 	| {
 			kind: "create-untyped";
@@ -74,8 +78,31 @@ export class AtSuggest extends EditorSuggest<Suggestion> {
 	 */
 	private propertyContextTypeId: string | null = null;
 
+	/**
+	 * Text that was selected in the editor immediately before the trigger
+	 * character was typed. Set by `captureSelection` (called from the plugin's
+	 * keydown handler) and consumed by `onTrigger` on the very next call.
+	 */
+	private pendingSelection: string | null = null;
+	/**
+	 * The selection text that was active when this suggest session started.
+	 * Persists for the lifetime of the session so it can be offered as an
+	 * alias on every note/create suggestion row.
+	 */
+	private activeSelectionAlias: string | null = null;
+
 	constructor(app: App, private readonly manager: ObjectTypeManager) {
 		super(app);
+	}
+
+	/**
+	 * Called by the plugin's keydown listener when the trigger character is
+	 * pressed while text is selected. The selection is stored here and picked
+	 * up by the next `onTrigger` call, which fires after the editor has
+	 * replaced the selection with the trigger character.
+	 */
+	captureSelection(text: string): void {
+		this.pendingSelection = text || null;
 	}
 
 	onTrigger(
@@ -107,10 +134,26 @@ export class AtSuggest extends EditorSuggest<Suggestion> {
 			file
 		);
 
+		// On the initial trigger (cursor right after the @ sign, nothing yet
+		// typed after it), consume any pending selection captured from the
+		// keydown event. This pre-populates the dropdown query with the
+		// selected text and stores it as the potential alias for this session.
+		// If the user backspaces back to bare @, the alias is cleared (since
+		// pendingSelection was already consumed and won't be set again).
+		if (query.length === 0) {
+			const sel = this.pendingSelection;
+			this.pendingSelection = null;
+			this.activeSelectionAlias = sel;
+		}
+
 		return {
 			start: { line: cursor.line, ch: idx },
 			end: cursor,
-			query,
+			// Pre-populate the query with the selection text on first trigger;
+			// subsequent keystrokes use the actual editor content.
+			query: query.length === 0 && this.activeSelectionAlias
+				? this.activeSelectionAlias
+				: query,
 		};
 	}
 
@@ -185,12 +228,26 @@ export class AtSuggest extends EditorSuggest<Suggestion> {
 			scopeType,
 			20
 		);
+		const alias = this.activeSelectionAlias;
 		for (const n of notes) {
 			suggestions.push({
 				kind: "note",
 				file: n.file,
 				type: n.type,
 			});
+			// When a selection was captured before @, offer a companion row
+			// that inserts the wikilink with the selection as the display name.
+			if (
+				alias &&
+				filenameWithoutExtension(n.file.name) !== alias
+			) {
+				suggestions.push({
+					kind: "note",
+					file: n.file,
+					type: n.type,
+					alias,
+				});
+			}
 		}
 
 		// --- Create-new row ---------------------------------------------
@@ -207,6 +264,16 @@ export class AtSuggest extends EditorSuggest<Suggestion> {
 						type: scopeType,
 						title: query,
 					});
+					// Alias variant for create: create the note by that name
+					// but insert the wikilink with the captured text as alias.
+					if (alias && query !== alias) {
+						suggestions.push({
+							kind: "create",
+							type: scopeType,
+							title: query,
+							alias,
+						});
+					}
 				} else {
 					// No type chosen — offer to create a plain note in the
 					// vault's default location (Files & Links → New note
@@ -247,22 +314,35 @@ export class AtSuggest extends EditorSuggest<Suggestion> {
 				titleEl.setText(
 					filenameWithoutExtension(suggestion.file.name)
 				);
-				subEl.setText(
-					suggestion.type
-						? `${suggestion.type.name} · ${suggestion.file.parent?.path ?? ""}`
-						: suggestion.file.parent?.path ?? ""
-				);
+				if (suggestion.alias) {
+					const typePart = suggestion.type
+						? `${suggestion.type.name} · `
+						: "";
+					subEl.setText(
+						`as "${suggestion.alias}" · ${typePart}${suggestion.file.parent?.path ?? ""}`
+					);
+				} else {
+					subEl.setText(
+						suggestion.type
+							? `${suggestion.type.name} · ${suggestion.file.parent?.path ?? ""}`
+							: suggestion.file.parent?.path ?? ""
+					);
+				}
 				break;
 			}
 			case "create": {
 				setIcon(iconEl, "plus");
-				titleEl.setText(`Create “${suggestion.title}”`);
-				subEl.setText(`New ${suggestion.type.name}`);
+				titleEl.setText(`Create "${suggestion.title}"`);
+				subEl.setText(
+					suggestion.alias
+						? `New ${suggestion.type.name} · as "${suggestion.alias}"`
+						: `New ${suggestion.type.name}`
+				);
 				break;
 			}
 			case "create-untyped": {
 				setIcon(iconEl, "plus");
-				titleEl.setText(`Create “${suggestion.title}”`);
+				titleEl.setText(`Create "${suggestion.title}"`);
 				subEl.setText("New note (default location)");
 				break;
 			}
@@ -290,7 +370,7 @@ export class AtSuggest extends EditorSuggest<Suggestion> {
 			case "note":
 				this.insertWikilink(
 					context,
-					filenameWithoutExtension(suggestion.file.name),
+					suggestion.alias ?? filenameWithoutExtension(suggestion.file.name),
 					suggestion.file
 				);
 				return;
@@ -338,6 +418,8 @@ export class AtSuggest extends EditorSuggest<Suggestion> {
 			typeId: type.id,
 			prefixLength: `${type.pluralName}/`.length,
 		};
+		// Selection alias no longer applies once the user has navigated into
+		// a type filter — preserve it so they can still pick an alias variant.
 		// Re-open the suggester at the new cursor position.
 		this.close();
 		// Obsidian will reopen the suggester when it detects the trigger on
@@ -363,6 +445,7 @@ export class AtSuggest extends EditorSuggest<Suggestion> {
 			context.end
 		);
 		this.activeFilter = null;
+		this.activeSelectionAlias = null;
 	}
 
 	private async createAndInsert(
@@ -374,7 +457,10 @@ export class AtSuggest extends EditorSuggest<Suggestion> {
 				suggestion.type,
 				suggestion.title
 			);
-			this.insertWikilink(context, suggestion.title, file);
+			// Use alias as display name when present, otherwise use the title
+			// (which matches the filename stem).
+			const displayName = suggestion.alias ?? suggestion.title;
+			this.insertWikilink(context, displayName, file);
 			new Notice(
 				`Created ${suggestion.type.name}: ${filenameWithoutExtension(
 					file.name
