@@ -91,7 +91,7 @@ export class SelectionSuggest {
 		this.highlighted = 0;
 
 		const popup = document.createElement("div");
-		popup.addClass("obsidian-objects-mention-popup");
+		popup.addClass("suggestion-container");
 		popup.addClass("obsidian-objects-sel-suggest");
 
 		const input = popup.createEl("input", {
@@ -306,7 +306,7 @@ export class SelectionSuggest {
 
 		if (this.suggestions.length === 0) {
 			list.createDiv({
-				cls: "obsidian-objects-mention-popup__empty",
+				cls: "obsidian-objects-sel-suggest__empty",
 				text: "No matches.",
 			});
 			return;
@@ -314,7 +314,7 @@ export class SelectionSuggest {
 
 		this.suggestions.forEach((s, idx) => {
 			const row = list.createDiv({
-				cls: "obsidian-objects-suggest obsidian-objects-mention-popup__row",
+				cls: "suggestion-item obsidian-objects-suggest",
 			});
 			if (idx === this.highlighted) row.addClass("is-selected");
 

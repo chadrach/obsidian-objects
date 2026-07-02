@@ -425,22 +425,20 @@
   font-size: 0.9em;
 }
 
-/* Selection-aware @ popup — declared after mention-popup so these
-   overrides win the cascade when both classes are on the same element. */
+/* Selection suggest — uses Obsidian's native suggestion-container as its
+   base so it matches the inline suggest shape exactly. We override only
+   what's needed to accommodate the search input above the list. */
 .obsidian-objects-sel-suggest {
-  overflow: visible;   /* let the inner list handle its own scroll */
-  max-height: none;    /* don't let the container itself scroll */
+  overflow: visible;  /* container itself doesn't scroll; list does */
+  max-height: none;
   padding: 0.35rem 0.35rem 0.2rem;
-  /* Match native Obsidian suggest width and shape */
-  min-width: 320px;
-  max-width: min(480px, 95vw);
 }
 
 .obsidian-objects-sel-suggest__input {
   display: block;
   width: 100%;
   padding: 0.3rem 0.5rem;
-  margin-bottom: 0.2rem;
+  margin-bottom: 0.25rem;
   background: var(--background-secondary);
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-s, 4px);
@@ -455,6 +453,13 @@
 }
 
 .obsidian-objects-sel-suggest__list {
-  max-height: 240px;
+  max-height: 260px;
   overflow-y: auto;
+}
+
+.obsidian-objects-sel-suggest__empty {
+  padding: 0.5rem 0.75rem;
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 0.9em;
 }
