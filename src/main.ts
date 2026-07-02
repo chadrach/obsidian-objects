@@ -106,27 +106,27 @@ export default class ObjectsPlugin extends Plugin {
 			})
 		);
 
-		// --- Auto-apply prompt for externally created / moved notes --
-		// When a markdown note appears in a typed folder via means other than
-		// the plugin (file explorer, drag-and-drop, external tools), offer to
-		// stamp the type's template onto it. We defer the check by 300 ms so
-		// the metadata cache has time to settle — the cache is used to detect
-		// whether the type is already applied (which is how we avoid
-		// prompting for notes the plugin just created itself).
-		this.registerEvent(
-			this.app.vault.on("create", (abstract) => {
-				if (abstract instanceof TFile) {
-					this.scheduleAutoApplyCheck(abstract);
-				}
-			})
-		);
-		this.registerEvent(
-			this.app.vault.on("rename", (abstract, oldPath) => {
-				if (abstract instanceof TFile) {
-					this.scheduleAutoApplyCheck(abstract, oldPath);
-				}
-			})
-		);
+		// --- Auto-apply prompt for notes created / moved inside Obsidian --
+		// vault.on('create') fires for every file during startup as Obsidian
+		// indexes the vault, so these listeners must be registered inside
+		// onLayoutReady — after the initial scan completes — to avoid
+		// prompting for every pre-existing note on load.
+		this.app.workspace.onLayoutReady(() => {
+			this.registerEvent(
+				this.app.vault.on("create", (abstract) => {
+					if (abstract instanceof TFile) {
+						this.scheduleAutoApplyCheck(abstract);
+					}
+				})
+			);
+			this.registerEvent(
+				this.app.vault.on("rename", (abstract, oldPath) => {
+					if (abstract instanceof TFile) {
+						this.scheduleAutoApplyCheck(abstract, oldPath);
+					}
+				})
+			);
+		});
 
 		// --- Folder click → base file ---------------------------------
 		// Obsidian's file-explorer toggles folder collapse on `click` in the
