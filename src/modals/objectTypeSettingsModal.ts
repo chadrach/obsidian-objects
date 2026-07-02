@@ -890,6 +890,43 @@ export class ObjectTypeSettingsModal extends Modal {
 				});
 				if (choice !== "confirm") return;
 			}
+
+			// Check if the showTypeProperty flag changed and offer to
+			// bulk-update existing notes to match.
+			const prevShowTypeProperty = type.showTypeProperty ?? false;
+			const newShowTypeProperty = draft.showTypeProperty ?? false;
+			let typePropertyAction: "add" | "remove" | undefined;
+			if (
+				prevShowTypeProperty !== newShowTypeProperty &&
+				preview.affectedFileCount > 0
+			) {
+				const typePropertyName =
+					this.manager.getSettings().typePropertyName;
+				if (newShowTypeProperty) {
+					const choice = await confirmAction(this.app, {
+						title: `Add "${typePropertyName}" to existing notes?`,
+						body: `${preview.affectedFileCount} existing note(s) can be updated to include a "${typePropertyName}" property identifying them as ${trimmedName}.`,
+						extraButtons: [
+							{ text: "New notes only", value: "skip" },
+						],
+						confirmText: "Update existing notes",
+					});
+					if (choice === null || choice === "cancel") return;
+					if (choice === "confirm") typePropertyAction = "add";
+				} else {
+					const choice = await confirmAction(this.app, {
+						title: `Remove "${typePropertyName}" from existing notes?`,
+						body: `${preview.affectedFileCount} existing note(s) currently carry a "${typePropertyName}" property.`,
+						extraButtons: [
+							{ text: "New notes only", value: "skip" },
+						],
+						confirmText: "Remove from existing notes",
+					});
+					if (choice === null || choice === "cancel") return;
+					if (choice === "confirm") typePropertyAction = "remove";
+				}
+			}
+
 			await this.manager.updateType(
 				draft.existingId,
 				{
@@ -898,11 +935,11 @@ export class ObjectTypeSettingsModal extends Modal {
 					icon: draft.icon.trim() || "box",
 					parentId: draft.parentId,
 					properties: cleaned,
-					showTypeProperty: draft.showTypeProperty ?? false,
+					showTypeProperty: newShowTypeProperty,
 					showTags: draft.showTags ?? false,
 					showAliases: draft.showAliases ?? false,
 				},
-				{ removeDeletedFromNotes: removeFromNotes }
+				{ removeDeletedFromNotes: removeFromNotes, typePropertyAction }
 			);
 		} else {
 			// New types: a same-named folder owned by another type is a hard

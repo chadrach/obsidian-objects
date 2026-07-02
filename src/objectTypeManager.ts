@@ -188,7 +188,12 @@ export class ObjectTypeManager {
 				| "showTypeProperty"
 			>
 		>,
-		options: { removeDeletedFromNotes?: boolean } = {}
+		options: {
+			removeDeletedFromNotes?: boolean;
+			/** When set, bulk-writes or deletes the type-identifier key on
+			 *  every existing note in the folder to match the new flag value. */
+			typePropertyAction?: "add" | "remove";
+		} = {}
 	): Promise<ObjectTypeDefinition> {
 		const type = this.getTypeById(id);
 		if (!type) throw new Error(`Unknown type id ${id}`);
@@ -215,6 +220,21 @@ export class ObjectTypeManager {
 				mutation,
 				options.removeDeletedFromNotes ?? false
 			);
+		}
+
+		if (options.typePropertyAction) {
+			const typeKey = this.data.settings.typePropertyName;
+			const qualifiedName = this.getQualifiedName(type);
+			const files = filesInFolder(this.app.vault, type.folderPath);
+			for (const file of files) {
+				await this.app.fileManager.processFrontMatter(file, (fm) => {
+					if (options.typePropertyAction === "add") {
+						fm[typeKey] = qualifiedName;
+					} else {
+						delete fm[typeKey];
+					}
+				});
+			}
 		}
 
 		await this.rewriteBase(type, mutation);
