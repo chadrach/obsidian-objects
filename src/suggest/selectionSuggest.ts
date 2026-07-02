@@ -367,11 +367,9 @@ export class SelectionSuggest {
 				this.highlighted = idx;
 				this.renderList();
 			});
-			// pointerdown fires before the synthetic mouseenter on touch, so
-			// selecting a row works with a single tap on mobile (mousedown fires
-			// after the hover-triggered re-render that causes the double-tap
-			// issue). preventDefault keeps focus on the search input.
-			row.addEventListener("pointerdown", (evt) => {
+			// mousedown (not click) so we can preventDefault and keep the
+			// search input focused while confirming a selection.
+			row.addEventListener("mousedown", (evt) => {
 				evt.preventDefault();
 				evt.stopPropagation();
 				void this.selectSuggestion(s);
