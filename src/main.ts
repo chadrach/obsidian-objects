@@ -15,6 +15,7 @@ import { AtSuggest } from "./suggest/atSuggest";
 import { ObjectTypeSettingsModal } from "./modals/objectTypeSettingsModal";
 import { ChangeObjectTypeModal } from "./modals/changeObjectTypeModal";
 import { ApplyObjectTypeModal } from "./modals/applyObjectTypeModal";
+import { SelectionLinkModal } from "./modals/selectionLinkModal";
 import { LinkDecorator } from "./linkDecorator";
 import { ObjectsSettingTab } from "./settingTab";
 import { syncDailyNotesType } from "./dailyNotes";
@@ -56,20 +57,31 @@ export default class ObjectsPlugin extends Plugin {
 		this.suggest = new AtSuggest(this.app, this.manager);
 		this.registerEditorSuggest(this.suggest);
 
-		// Capture any active text selection the moment the trigger character
-		// is pressed. By the time EditorSuggest.onTrigger fires, the editor
-		// has already replaced the selection with the trigger character, so we
-		// must snapshot it here and hand it to AtSuggest.
+		// When the trigger character is pressed with text selected, intercept
+		// it entirely: prevent the @ from being inserted and open the
+		// SelectionLinkModal so the selected text stays in place.
 		this.registerDomEvent(document, "keydown", (evt: KeyboardEvent) => {
 			if (evt.defaultPrevented) return;
 			const trigger = this.manager.getSettings().triggerChar || "@";
 			if (evt.key !== trigger) return;
 			const view = this.app.workspace.getActiveViewOfType(MarkdownView);
 			if (!view) return;
-			const sel = view.editor.getSelection();
-			if (sel) {
-				this.suggest?.captureSelection(sel);
-			}
+			const editor = view.editor;
+			const sel = editor.getSelection();
+			if (!sel) return;
+			evt.preventDefault();
+			const from = editor.getCursor("from");
+			const to = editor.getCursor("to");
+			const sourcePath = view.file?.path ?? "";
+			new SelectionLinkModal(
+				this.app,
+				this.manager,
+				editor,
+				from,
+				to,
+				sel,
+				sourcePath
+			).open();
 		});
 
 		// --- CodeMirror live-preview icon extension --------------------
