@@ -484,6 +484,38 @@ export class ObjectTypeManager {
 	}
 
 	/**
+	 * Stamp an object type's template onto an existing note in-place. Unlike
+	 * `changeObjectType`, this never moves the file — it just ensures the type
+	 * identifier and any missing default properties are written into the
+	 * frontmatter. Existing properties are left untouched.
+	 *
+	 * Used by the auto-apply prompt when a note is created or moved into a
+	 * typed folder outside of the plugin's own note-creation flow.
+	 */
+	async stampObjectType(
+		file: TFile,
+		type: ObjectTypeDefinition
+	): Promise<void> {
+		const typeKey = this.data.settings.typePropertyName;
+		const props = this.getEffectiveProperties(type);
+		const chain = this.getTypeChain(type);
+
+		await this.app.fileManager.processFrontMatter(file, (fm) => {
+			fm[typeKey] = this.getQualifiedName(type);
+			for (const prop of props) {
+				if (!(prop.name in fm)) {
+					fm[prop.name] = propertyInitialValue(prop);
+				}
+			}
+			if (chain.some((t) => t.showTags) && !("tags" in fm)) fm.tags = [];
+			if (chain.some((t) => t.showAliases) && !("aliases" in fm))
+				fm.aliases = [];
+		});
+
+		for (const l of this.listeners) l();
+	}
+
+	/**
 	 * Convert an existing note to a different object type. Three steps:
 	 *   1. Apply the user-supplied frontmatter mapping (rename / delete /
 	 *      keep each existing property).

@@ -14,6 +14,7 @@ import { ObjectTypeManager } from "./objectTypeManager";
 import { AtSuggest } from "./suggest/atSuggest";
 import { ObjectTypeSettingsModal } from "./modals/objectTypeSettingsModal";
 import { ChangeObjectTypeModal } from "./modals/changeObjectTypeModal";
+import { ApplyObjectTypeModal } from "./modals/applyObjectTypeModal";
 import { LinkDecorator } from "./linkDecorator";
 import { ObjectsSettingTab } from "./settingTab";
 import { syncDailyNotesType } from "./dailyNotes";
@@ -101,6 +102,28 @@ export default class ObjectsPlugin extends Plugin {
 					file.extension === "md"
 				) {
 					this.addFileMenuItems(menu, file);
+				}
+			})
+		);
+
+		// --- Auto-apply prompt for externally created / moved notes --
+		// When a markdown note appears in a typed folder via means other than
+		// the plugin (file explorer, drag-and-drop, external tools), offer to
+		// stamp the type's template onto it. We defer the check by 300 ms so
+		// the metadata cache has time to settle — the cache is used to detect
+		// whether the type is already applied (which is how we avoid
+		// prompting for notes the plugin just created itself).
+		this.registerEvent(
+			this.app.vault.on("create", (abstract) => {
+				if (abstract instanceof TFile) {
+					this.scheduleAutoApplyCheck(abstract);
+				}
+			})
+		);
+		this.registerEvent(
+			this.app.vault.on("rename", (abstract, oldPath) => {
+				if (abstract instanceof TFile) {
+					this.scheduleAutoApplyCheck(abstract, oldPath);
 				}
 			})
 		);
@@ -304,6 +327,52 @@ export default class ObjectsPlugin extends Plugin {
 			sel?.removeAllRanges();
 			sel?.addRange(range);
 		}
+	}
+
+	/**
+	 * Schedule a deferred check to see whether a newly created or moved note
+	 * should get the auto-apply prompt. Deferral allows Obsidian's metadata
+	 * cache to finish indexing the file before we read its frontmatter.
+	 *
+	 * For `rename` events (moves), `oldPath` lets us skip the prompt when the
+	 * file was already in the same type's folder — e.g. a simple in-folder
+	 * rename rather than a cross-folder move.
+	 */
+	private scheduleAutoApplyCheck(file: TFile, oldPath?: string): void {
+		if (file.extension !== "md") return;
+
+		const type = this.manager.getTypeForPath(file.path);
+		if (!type || type.managed === "daily-notes") return;
+
+		// Skip pure in-folder renames — the folder didn't change.
+		if (oldPath) {
+			const oldType = this.manager.getTypeForPath(oldPath);
+			if (oldType?.id === type.id) return;
+		}
+
+		window.setTimeout(() => {
+			// Re-validate: the file might have been moved again during the delay.
+			const current = this.app.vault.getAbstractFileByPath(file.path);
+			if (!(current instanceof TFile)) return;
+
+			const currentType = this.manager.getTypeForPath(file.path);
+			if (!currentType || currentType.id !== type.id) return;
+
+			// Skip if the type key is already set correctly — this handles
+			// notes the plugin just created (which already have frontmatter)
+			// as well as notes moved in from another typed folder.
+			const cache = this.app.metadataCache.getFileCache(current);
+			const typeKey = this.manager.getSettings().typePropertyName;
+			const qualifiedName = this.manager.getQualifiedName(type);
+			if (cache?.frontmatter?.[typeKey] === qualifiedName) return;
+
+			new ApplyObjectTypeModal(
+				this.app,
+				this.manager,
+				current,
+				type
+			).open();
+		}, 300);
 	}
 
 	/**
