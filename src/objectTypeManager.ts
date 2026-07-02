@@ -27,6 +27,9 @@ import { writeBaseFile } from "./baseFileManager";
 export class ObjectTypeManager {
 	private data: ObjectsPluginData;
 	private readonly listeners = new Set<() => void>();
+	/** Paths of files the plugin is about to create or rename so that the
+	 *  vault event listeners can skip the auto-apply prompt for them. */
+	private readonly pluginManagedPaths = new Set<string>();
 
 	constructor(
 		private readonly app: App,
@@ -113,6 +116,15 @@ export class ObjectTypeManager {
 	onChange(listener: () => void): () => void {
 		this.listeners.add(listener);
 		return () => this.listeners.delete(listener);
+	}
+
+	/**
+	 * Check whether `path` was registered by the plugin as an imminent
+	 * create/rename, and consume the registration if so. Used by vault event
+	 * listeners to skip the auto-apply prompt for plugin-initiated operations.
+	 */
+	consumePluginManagedPath(path: string): boolean {
+		return this.pluginManagedPaths.delete(path);
 	}
 
 	async updateSettings(patch: Partial<PluginSettings>): Promise<void> {
@@ -511,6 +523,7 @@ export class ObjectTypeManager {
 			title || "Untitled"
 		);
 		const content = stringifyFrontmatter(fm);
+		this.pluginManagedPaths.add(path);
 		const file = await this.app.vault.create(path, content);
 		return file;
 	}
@@ -626,6 +639,7 @@ export class ObjectTypeManager {
 					options.targetPath.slice(0, lastSlash)
 				);
 			}
+			this.pluginManagedPaths.add(options.targetPath);
 			await this.app.fileManager.renameFile(file, options.targetPath);
 		}
 

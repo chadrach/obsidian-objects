@@ -341,6 +341,12 @@ export default class ObjectsPlugin extends Plugin {
 	private scheduleAutoApplyCheck(file: TFile, oldPath?: string): void {
 		if (file.extension !== "md") return;
 
+		// Skip creates/renames initiated by the plugin itself (createObjectNote,
+		// changeObjectType). Consuming the registration here is intentionally
+		// synchronous — it happens before the 300 ms deferred check so that
+		// even a slow metadata cache can't race past this guard.
+		if (this.manager.consumePluginManagedPath(file.path)) return;
+
 		const type = this.manager.getTypeForPath(file.path);
 		if (!type || type.managed === "daily-notes") return;
 
