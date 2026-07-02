@@ -38,8 +38,9 @@
 }
 
 .obsidian-objects-banner {
-  background: var(--background-modifier-error);
-  color: var(--text-on-accent);
+  background: transparent;
+  color: var(--text-error);
+  border: 1px solid var(--text-error);
   padding: 0.5rem 0.75rem;
   border-radius: 4px;
   margin-bottom: 0.75rem;
@@ -57,7 +58,7 @@
 }
 
 .obsidian-objects-banner__list a {
-  color: var(--text-on-accent);
+  color: var(--text-error);
   text-decoration: underline;
 }
 
@@ -299,8 +300,9 @@
 
 .obsidian-objects-warn {
   padding: 0.5rem 0.75rem;
-  background: var(--background-modifier-error);
-  color: var(--text-on-accent);
+  background: transparent;
+  color: var(--text-error);
+  border: 1px solid var(--text-error);
   border-radius: 4px;
   margin-bottom: 0.75rem;
   font-size: 0.85em;
