@@ -299,6 +299,16 @@ export class SelectionSuggest {
 		return items;
 	}
 
+	private updateHighlight(newIdx: number): void {
+		if (!this.listEl) return;
+		const rows = this.listEl.children;
+		(rows[this.highlighted] as HTMLElement | undefined)?.removeClass("is-selected");
+		this.highlighted = newIdx;
+		const next = rows[this.highlighted] as HTMLElement | undefined;
+		next?.addClass("is-selected");
+		next?.scrollIntoView({ block: "nearest" });
+	}
+
 	private renderList(): void {
 		const list = this.listEl;
 		if (!list) return;
@@ -364,8 +374,7 @@ export class SelectionSuggest {
 			}
 
 			row.addEventListener("mouseenter", () => {
-				this.highlighted = idx;
-				this.renderList();
+				this.updateHighlight(idx);
 			});
 			// mousedown: prevent focus leaving the search input.
 			// click: confirm selection — fires only after a deliberate tap
@@ -388,13 +397,10 @@ export class SelectionSuggest {
 		const count = this.suggestions.length;
 		if (evt.key === "ArrowDown") {
 			evt.preventDefault();
-			this.highlighted = count > 0 ? (this.highlighted + 1) % count : 0;
-			this.renderList();
+			this.updateHighlight(count > 0 ? (this.highlighted + 1) % count : 0);
 		} else if (evt.key === "ArrowUp") {
 			evt.preventDefault();
-			this.highlighted =
-				count > 0 ? (this.highlighted - 1 + count) % count : 0;
-			this.renderList();
+			this.updateHighlight(count > 0 ? (this.highlighted - 1 + count) % count : 0);
 		} else if (evt.key === "Enter" || evt.key === "Tab") {
 			evt.preventDefault();
 			const s = this.suggestions[this.highlighted];
