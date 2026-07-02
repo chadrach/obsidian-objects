@@ -48,11 +48,17 @@ export class SelectionSuggest {
 	private to: EditorPosition | null = null;
 	private originalText = "";
 	private sourcePath = "";
+	private cmViewRef: EditorView | null = null;
 
 	private readonly onDocMousedown = (evt: MouseEvent): void => {
 		if (this.popupEl && !this.popupEl.contains(evt.target as Node)) {
 			this.close();
 		}
+	};
+
+	private readonly onViewportChange = (): void => {
+		if (!this.popupEl || !this.cmViewRef || !this.from) return;
+		this.positionPopup(this.cmViewRef, this.from);
 	};
 
 	constructor(
@@ -75,6 +81,7 @@ export class SelectionSuggest {
 		this.to = to;
 		this.originalText = selectedText;
 		this.sourcePath = sourcePath;
+		this.cmViewRef = cmView;
 		this.filter = null;
 		this.highlighted = 0;
 
@@ -105,6 +112,8 @@ export class SelectionSuggest {
 
 		document.body.appendChild(popup);
 		document.addEventListener("mousedown", this.onDocMousedown, true);
+		window.visualViewport?.addEventListener("resize", this.onViewportChange);
+		window.visualViewport?.addEventListener("scroll", this.onViewportChange);
 
 		this.positionPopup(cmView, from);
 		this.refresh();
@@ -124,6 +133,9 @@ export class SelectionSuggest {
 		this.inputEl = null;
 		this.listEl = null;
 		document.removeEventListener("mousedown", this.onDocMousedown, true);
+		window.visualViewport?.removeEventListener("resize", this.onViewportChange);
+		window.visualViewport?.removeEventListener("scroll", this.onViewportChange);
+		this.cmViewRef = null;
 		this.filter = null;
 	}
 
@@ -141,9 +153,25 @@ export class SelectionSuggest {
 			const offset = line.from + Math.min(pos.ch, line.length);
 			const coords = cmView.coordsAtPos(offset);
 			if (coords) {
+				const vv = window.visualViewport;
+				const vpTop = vv?.offsetTop ?? 0;
+				const vpHeight = vv?.height ?? window.innerHeight;
+				const vpWidth = vv?.width ?? window.innerWidth;
+
 				popup.style.position = "fixed";
-				popup.style.left = `${Math.max(4, coords.left)}px`;
-				popup.style.top = `${coords.bottom + 4}px`;
+				popup.style.transform = "";
+				// Clamp left so the popup doesn't extend beyond the visible width.
+				popup.style.left = `${Math.max(4, Math.min(coords.left, vpWidth - 4))}px`;
+
+				// Prefer below the line; flip above if the keyboard would cover it.
+				const belowTop = coords.bottom + 4;
+				const popupMaxH = 280;
+				if (belowTop + popupMaxH < vpTop + vpHeight) {
+					popup.style.top = `${belowTop}px`;
+				} else {
+					// Above the line — ensure we don't go above the visible top.
+					popup.style.top = `${Math.max(vpTop + 4, coords.top - popupMaxH - 4)}px`;
+				}
 				return;
 			}
 		} catch {

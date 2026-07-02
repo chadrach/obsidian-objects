@@ -1,4 +1,5 @@
 import {
+	Editor,
 	Menu,
 	MenuItem,
 	Notice,
@@ -209,22 +210,14 @@ export default class ObjectsPlugin extends Plugin {
 			id: "insert-object-mention",
 			name: "Insert object mention",
 			editorCallback: (editor) => {
-				const cursor = editor.getCursor();
-				const trigger = this.manager.getSettings().triggerChar || "@";
-				editor.replaceRange(trigger, cursor);
-				editor.setCursor({ line: cursor.line, ch: cursor.ch + 1 });
+				this.openMentionFromCommand(editor);
 			},
 		});
 		this.addCommand({
 			id: "open-object-mention-popup",
 			name: "Open object mention popup (mobile)",
 			editorCallback: (editor) => {
-				const cursor = editor.getCursor();
-				const trigger = this.manager.getSettings().triggerChar || "@";
-				// Insert the trigger character and position cursor after it.
-				// The EditorSuggest will automatically detect and show the popup.
-				editor.replaceRange(trigger, cursor);
-				editor.setCursor({ line: cursor.line, ch: cursor.ch + 1 });
+				this.openMentionFromCommand(editor);
 			},
 		});
 
@@ -478,6 +471,42 @@ export default class ObjectsPlugin extends Plugin {
 	/** Unused convenience, kept for external callers / future code. */
 	getSuggest(): AtSuggest | null {
 		return this.suggest;
+	}
+
+	/**
+	 * Shared logic for the "Insert object mention" and "Open object mention
+	 * popup (mobile)" commands.
+	 *
+	 * - If text is selected: open the SelectionSuggest popup so the selection
+	 *   becomes the display name of the inserted wikilink.
+	 * - If nothing is selected: insert the trigger character and dispatch an
+	 *   input event so the CM6-backed EditorSuggest opens immediately (instead
+	 *   of waiting for the next keystroke, which is the normal trigger path
+	 *   but does not fire after programmatic edits on mobile).
+	 */
+	private openMentionFromCommand(editor: Editor): void {
+		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+		if (!view) return;
+		const sel = editor.getSelection();
+		const cmView = (editor as unknown as { cm?: EditorView }).cm;
+		if (sel && cmView) {
+			const from = editor.getCursor("from");
+			const to = editor.getCursor("to");
+			const sourcePath = view.file?.path ?? "";
+			this.selectionSuggest?.show(editor, from, to, sel, sourcePath, cmView);
+		} else {
+			const cursor = editor.getCursor();
+			const trigger = this.manager.getSettings().triggerChar || "@";
+			editor.replaceRange(trigger, cursor);
+			editor.setCursor({ line: cursor.line, ch: cursor.ch + 1 });
+			// On mobile the EditorSuggest is only triggered by user input events,
+			// not programmatic document changes. Dispatching a synthetic input
+			// event on the CM6 content node causes the suggest machinery to
+			// re-check and open the popup immediately.
+			cmView?.contentDOM.dispatchEvent(
+				new InputEvent("input", { bubbles: true, cancelable: true })
+			);
+		}
 	}
 
 	getExplorerLeaves(): WorkspaceLeaf[] {
