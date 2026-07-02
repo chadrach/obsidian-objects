@@ -167,8 +167,10 @@ export class SelectionSuggest {
 
 				popup.style.position = "fixed";
 				popup.style.transform = "";
-				// Clamp left so the popup doesn't extend beyond the visible width.
-				popup.style.left = `${Math.max(4, Math.min(coords.left, vpWidth - 4))}px`;
+				// Clamp left so the right edge of the popup stays on screen.
+				const popupWidth = popup.offsetWidth || 320;
+				const left = Math.max(4, Math.min(coords.left, vpWidth - popupWidth - 4));
+				popup.style.left = `${left}px`;
 
 				// Prefer below the line; flip above if the keyboard would cover it.
 				const belowTop = coords.bottom + 4;
