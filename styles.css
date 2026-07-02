@@ -396,8 +396,10 @@
 
 /* Selection-aware @ popup (floats near cursor, has its own search input) */
 .obsidian-objects-sel-suggest {
-  /* Override the mention-popup's overflow so only the list scrolls. */
-  overflow-y: visible;
+  /* Override the mention-popup's overflow so only the list scrolls.
+     overflow-y: auto (from the base class) promotes overflow-x to clip too,
+     shaving the input's border. Reset both axes so only the list scrolls. */
+  overflow: visible;
   padding: 0.35rem 0.35rem 0.2rem;
   min-width: 240px;
   max-width: 380px;
