@@ -212,7 +212,26 @@ export class SelectionSuggest {
 			}
 		}
 
-		// Type filter rows (unscoped only)
+		// Note rows — sorted most-recently-modified first, limit 10.
+		// Matches the ordering used by Obsidian's native Quick Switcher.
+		const files = this.app.vault
+			.getMarkdownFiles()
+			.slice()
+			.sort((a, b) => b.stat.mtime - a.stat.mtime);
+		let noteCount = 0;
+		for (const file of files) {
+			if (noteCount >= 10) break;
+			if (scopeType && !file.path.startsWith(scopeType.folderPath + "/"))
+				continue;
+			const name = filenameWithoutExtension(file.name).toLowerCase();
+			if (query && !name.includes(qLower)) continue;
+			const fileType =
+				scopeType ?? this.manager.getTypeForPath(file.path) ?? undefined;
+			items.push({ kind: "note", file, type: fileType });
+			noteCount++;
+		}
+
+		// Type filter rows (unscoped only, after notes)
 		if (!scopeType) {
 			for (const t of this.manager.getTypes()) {
 				if (t.managed === "daily-notes") continue;
@@ -224,21 +243,6 @@ export class SelectionSuggest {
 					items.push({ kind: "type", type: t });
 				}
 			}
-		}
-
-		// Note rows (scoped to type folder when filtered, otherwise all)
-		const files = this.app.vault.getMarkdownFiles();
-		let noteCount = 0;
-		for (const file of files) {
-			if (noteCount >= 20) break;
-			if (scopeType && !file.path.startsWith(scopeType.folderPath + "/"))
-				continue;
-			const name = filenameWithoutExtension(file.name).toLowerCase();
-			if (query && !name.includes(qLower)) continue;
-			const fileType =
-				scopeType ?? this.manager.getTypeForPath(file.path) ?? undefined;
-			items.push({ kind: "note", file, type: fileType });
-			noteCount++;
 		}
 
 		// Single create row when query has no exact match

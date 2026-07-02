@@ -159,6 +159,26 @@ export class AtSuggest extends EditorSuggest<Suggestion> {
 			}
 		}
 
+		// --- Note rows ---------------------------------------------------
+		// Most-recently-modified first (matches Quick Switcher), limit 10.
+		const scopeType: ObjectTypeDefinition | null = filter
+			? this.manager.getTypeById(filter.typeId) ?? null
+			: implicitType ?? null;
+		const notes = findMatchingNotes(
+			this.app,
+			this.manager,
+			query,
+			scopeType,
+			10
+		);
+		for (const n of notes) {
+			suggestions.push({
+				kind: "note",
+				file: n.file,
+				type: n.type,
+			});
+		}
+
 		// --- Type rows ---------------------------------------------------
 		if (!filter && !implicitType) {
 			const qLower = query.toLowerCase();
@@ -176,25 +196,6 @@ export class AtSuggest extends EditorSuggest<Suggestion> {
 					});
 				}
 			}
-		}
-
-		// --- Note rows ---------------------------------------------------
-		const scopeType: ObjectTypeDefinition | null = filter
-			? this.manager.getTypeById(filter.typeId) ?? null
-			: implicitType ?? null;
-		const notes = findMatchingNotes(
-			this.app,
-			this.manager,
-			query,
-			scopeType,
-			20
-		);
-		for (const n of notes) {
-			suggestions.push({
-				kind: "note",
-				file: n.file,
-				type: n.type,
-			});
 		}
 
 		// --- Create-new row ---------------------------------------------
@@ -453,7 +454,10 @@ function findMatchingNotes(
 ): Array<{ file: TFile; type?: ObjectTypeDefinition }> {
 	const qLower = query.toLowerCase();
 	const results: Array<{ file: TFile; type?: ObjectTypeDefinition }> = [];
-	const files = app.vault.getMarkdownFiles();
+	// Sort by most-recently-modified first, matching Obsidian's Quick Switcher.
+	const files = app.vault.getMarkdownFiles().slice().sort(
+		(a, b) => b.stat.mtime - a.stat.mtime
+	);
 	for (const file of files) {
 		if (scope && !file.path.startsWith(scope.folderPath + "/")) continue;
 		const name = filenameWithoutExtension(file.name).toLowerCase();
