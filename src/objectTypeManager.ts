@@ -135,6 +135,7 @@ export class ObjectTypeManager {
 		managed?: "daily-notes" | null;
 		showTags?: boolean;
 		showAliases?: boolean;
+		showTypeProperty?: boolean;
 	}): Promise<ObjectTypeDefinition> {
 		const folderPath = normalizePath(input.folderPath);
 		if (this.getTypeByFolder(folderPath)) {
@@ -154,6 +155,7 @@ export class ObjectTypeManager {
 			properties: input.properties ?? [],
 			showTags: input.showTags ?? false,
 			showAliases: input.showAliases ?? false,
+			showTypeProperty: input.showTypeProperty ?? false,
 			managed: input.managed ?? null,
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
@@ -183,6 +185,7 @@ export class ObjectTypeManager {
 				| "properties"
 				| "showTags"
 				| "showAliases"
+				| "showTypeProperty"
 			>
 		>,
 		options: { removeDeletedFromNotes?: boolean } = {}
@@ -200,6 +203,8 @@ export class ObjectTypeManager {
 		if (patch.showTags !== undefined) type.showTags = patch.showTags;
 		if (patch.showAliases !== undefined)
 			type.showAliases = patch.showAliases;
+		if (patch.showTypeProperty !== undefined)
+			type.showTypeProperty = patch.showTypeProperty;
 		type.updatedAt = Date.now();
 
 		let mutation: PropertyMutation | undefined;
@@ -461,8 +466,11 @@ export class ObjectTypeManager {
 		await ensureFolder(this.app.vault, type.folderPath);
 		const properties = this.getEffectiveProperties(type);
 		const fm: Record<string, unknown> = {};
-		fm[this.data.settings.typePropertyName] =
-			this.getQualifiedName(type);
+		const chain = this.getTypeChain(type);
+		if (chain.some((t) => t.showTypeProperty)) {
+			fm[this.data.settings.typePropertyName] =
+				this.getQualifiedName(type);
+		}
 		for (const p of properties) {
 			fm[p.name] = propertyInitialValue(p);
 		}
@@ -470,7 +478,6 @@ export class ObjectTypeManager {
 		// "tags" key uses the Tags property type, only "aliases" uses the
 		// Aliases type), so they're driven by per-type flags rather than
 		// regular property entries. Inherited from any ancestor in the chain.
-		const chain = this.getTypeChain(type);
 		if (chain.some((t) => t.showTags)) fm.tags = [];
 		if (chain.some((t) => t.showAliases)) fm.aliases = [];
 		const path = uniquePath(
@@ -501,7 +508,9 @@ export class ObjectTypeManager {
 		const chain = this.getTypeChain(type);
 
 		await this.app.fileManager.processFrontMatter(file, (fm) => {
-			fm[typeKey] = this.getQualifiedName(type);
+			if (chain.some((t) => t.showTypeProperty)) {
+				fm[typeKey] = this.getQualifiedName(type);
+			}
 			for (const prop of props) {
 				if (!(prop.name in fm)) {
 					fm[prop.name] = propertyInitialValue(prop);
@@ -568,8 +577,13 @@ export class ObjectTypeManager {
 				fm[key] = value;
 			}
 
-			// Always overwrite the type identifier — that's the whole point.
-			fm[typeKey] = this.getQualifiedName(newType);
+			// Stamp the type identifier only when the target type opts in.
+			const newChain = this.getTypeChain(newType);
+			if (newChain.some((t) => t.showTypeProperty)) {
+				fm[typeKey] = this.getQualifiedName(newType);
+			} else {
+				delete fm[typeKey];
+			}
 
 			// Fill any new-type property the mapping didn't already populate.
 			for (const prop of newProps) {

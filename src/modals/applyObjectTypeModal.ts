@@ -59,7 +59,10 @@ export class ApplyObjectTypeModal extends Modal {
 		const chain = this.manager.getTypeChain(this.type);
 
 		const willAdd: Array<{ name: string; detail: string }> = [];
-		if (existingFm[typeKey] !== qualifiedName) {
+		if (
+			chain.some((t) => t.showTypeProperty) &&
+			existingFm[typeKey] !== qualifiedName
+		) {
 			willAdd.push({
 				name: typeKey,
 				detail: `"${qualifiedName}"`,

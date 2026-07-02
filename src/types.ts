@@ -63,6 +63,14 @@ export interface ObjectTypeDefinition {
 	showTags?: boolean;
 	/** As `showTags`, but for the reserved `aliases` property. */
 	showAliases?: boolean;
+	/**
+	 * When true, new notes of this type get a frontmatter entry identifying
+	 * the object type (key is `PluginSettings.typePropertyName`, value is the
+	 * qualified type name). Opt-in — the plugin can infer the type from the
+	 * folder path, so this property is only useful when notes need to be
+	 * self-describing for external query tools (Dataview, custom Bases views).
+	 */
+	showTypeProperty?: boolean;
 	/** Creation + modification timestamps for bookkeeping. */
 	createdAt: number;
 	updatedAt: number;

@@ -455,6 +455,20 @@ export class ObjectTypeSettingsModal extends Modal {
 		const reserved = container.createDiv({
 			cls: "obsidian-objects-prop-toggles",
 		});
+		const typePropertyName =
+			this.manager.getSettings().typePropertyName;
+		new Setting(reserved)
+			.setName(`Include \`${typePropertyName}\` property`)
+			.setDesc(
+				`When creating a new note of this type, write its type name into the \`${typePropertyName}\` frontmatter key. Useful for Dataview or custom Bases queries that span multiple folders.`
+			)
+			.addToggle((t) =>
+				t
+					.setValue(draft.showTypeProperty ?? false)
+					.onChange((v) => {
+						draft.showTypeProperty = v;
+					})
+			);
 		new Setting(reserved)
 			.setName("Show Tags property by default")
 			.setDesc(
@@ -884,6 +898,7 @@ export class ObjectTypeSettingsModal extends Modal {
 					icon: draft.icon.trim() || "box",
 					parentId: draft.parentId,
 					properties: cleaned,
+					showTypeProperty: draft.showTypeProperty ?? false,
 					showTags: draft.showTags ?? false,
 					showAliases: draft.showAliases ?? false,
 				},
@@ -918,6 +933,7 @@ export class ObjectTypeSettingsModal extends Modal {
 					folderPath: targetFolderPath,
 					parentId: draft.parentId,
 					properties: cleaned,
+					showTypeProperty: draft.showTypeProperty ?? false,
 					showTags: draft.showTags ?? false,
 					showAliases: draft.showAliases ?? false,
 				});
@@ -947,6 +963,7 @@ interface TypeDraft {
 	icon: string;
 	parentId: string | null;
 	properties: ObjectProperty[];
+	showTypeProperty?: boolean;
 	showTags?: boolean;
 	showAliases?: boolean;
 }
@@ -968,6 +985,7 @@ function blankDraft(initialFolderPath = ""): TypeDraft {
 		icon: "box",
 		parentId: null,
 		properties: [],
+		showTypeProperty: false,
 		showTags: false,
 		showAliases: false,
 	};
@@ -982,6 +1000,7 @@ function draftFromType(type: ObjectTypeDefinition): TypeDraft {
 		icon: type.icon,
 		parentId: type.parentId ?? null,
 		properties: type.properties.map((p) => ({ ...p })),
+		showTypeProperty: type.showTypeProperty ?? false,
 		showTags: type.showTags ?? false,
 		showAliases: type.showAliases ?? false,
 	};
