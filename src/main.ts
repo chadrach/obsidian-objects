@@ -17,6 +17,7 @@ import { ObjectTypeSettingsModal } from "./modals/objectTypeSettingsModal";
 import { ChangeObjectTypeModal } from "./modals/changeObjectTypeModal";
 import { ApplyObjectTypeModal } from "./modals/applyObjectTypeModal";
 import { SelectionSuggest } from "./suggest/selectionSuggest";
+import { selectionHighlightExtension } from "./suggest/selectionHighlight";
 import { LinkDecorator } from "./linkDecorator";
 import { ObjectsSettingTab } from "./settingTab";
 import { syncDailyNotesType } from "./dailyNotes";
@@ -100,6 +101,11 @@ export default class ObjectsPlugin extends Plugin {
 		this.registerEditorExtension(
 			buildLinkIconExtension(this.app, this.manager)
 		);
+
+		// --- Selection highlight extension ---------------------------
+		// Draws a persistent mark decoration over the range being linked by
+		// the selection suggest popup, independent of editor focus state.
+		this.registerEditorExtension(selectionHighlightExtension);
 
 		// --- Mention popup (Properties editor, Bases cells) ------------
 		this.mentionPopup = new MentionPopup(this.app, this.manager);

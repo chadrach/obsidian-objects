@@ -1,5 +1,6 @@
 import { App, Editor, EditorPosition, Notice, TFile, setIcon } from "obsidian";
 import { EditorView } from "@codemirror/view";
+import { setSelectionHighlight } from "./selectionHighlight";
 import { ObjectTypeDefinition } from "../types";
 import { ObjectTypeManager } from "../objectTypeManager";
 import { formatDate, parseNaturalDate } from "../dateParser";
@@ -116,7 +117,15 @@ export class SelectionSuggest {
 		this.listEl = list;
 
 		document.body.appendChild(popup);
-		cmView.dom.addClass("obsidian-objects-sel-active");
+
+		// Draw a persistent highlight over the selected range so it remains
+		// visible even after the editor loses focus to the search input.
+		try {
+			const fromOff = cmView.state.doc.line(from.line + 1).from + from.ch;
+			const toOff = cmView.state.doc.line(to.line + 1).from + to.ch;
+			cmView.dispatch({ effects: setSelectionHighlight.of({ from: fromOff, to: toOff }) });
+		} catch { /* ignore if offset conversion fails */ }
+
 		document.addEventListener("mousedown", this.onDocMousedown, true);
 		window.visualViewport?.addEventListener("resize", this.onViewportChange);
 		window.visualViewport?.addEventListener("scroll", this.onViewportChange);
@@ -139,7 +148,7 @@ export class SelectionSuggest {
 		this.popupEl = null;
 		this.inputEl = null;
 		this.listEl = null;
-		this.cmViewRef?.dom.removeClass("obsidian-objects-sel-active");
+		this.cmViewRef?.dispatch({ effects: setSelectionHighlight.of(null) });
 		document.removeEventListener("mousedown", this.onDocMousedown, true);
 		window.visualViewport?.removeEventListener("resize", this.onViewportChange);
 		window.visualViewport?.removeEventListener("scroll", this.onViewportChange);

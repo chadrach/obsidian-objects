@@ -464,10 +464,9 @@
   font-size: 0.9em;
 }
 
-/* Keep the CM6 selection highlight visible while the selection suggest
-   popup is open (the editor loses focus to the search input, which would
-   normally hide the selection background). */
-.obsidian-objects-sel-active .cm-selectionBackground {
-  background: var(--text-selection) !important;
-  opacity: 1 !important;
+/* Persistent highlight drawn by our own CM6 mark decoration while the
+   selection suggest popup is open. Matches the native selection colour
+   and remains visible regardless of editor focus state. */
+.obsidian-objects-sel-highlight {
+  background: var(--text-selection, rgba(100, 149, 237, 0.3));
 }
