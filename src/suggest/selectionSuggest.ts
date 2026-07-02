@@ -367,11 +367,13 @@ export class SelectionSuggest {
 				this.highlighted = idx;
 				this.renderList();
 			});
-			// mousedown (not click) so we can preventDefault and keep the
-			// search input focused while confirming a selection.
+			// mousedown: prevent focus leaving the search input.
+			// click: confirm selection — fires only after a deliberate tap
+			// (not a scroll) on mobile, matching Obsidian's own behaviour.
 			row.addEventListener("mousedown", (evt) => {
 				evt.preventDefault();
-				evt.stopPropagation();
+			});
+			row.addEventListener("click", () => {
 				void this.selectSuggestion(s);
 			});
 		});
