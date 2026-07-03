@@ -17,15 +17,26 @@ import { trackVisualViewportForModal } from "../mobileViewport";
  * Choosing "Skip" leaves the note untouched. Choosing "Apply" calls
  * `ObjectTypeManager.stampObjectType` which adds the type key and any missing
  * properties without touching existing frontmatter or moving the file.
+ *
+ * When multiple notes are queued, `remainingCount` is the number of notes
+ * after this one. The modal then also shows "Apply to all" / "Skip all"
+ * buttons for batch handling.
  */
 export class ApplyObjectTypeModal extends Modal {
 	private keyboardCleanup: (() => void) | null = null;
+	private doneFired = false;
 
 	constructor(
 		app: App,
 		private readonly manager: ObjectTypeManager,
 		private readonly file: TFile,
-		private readonly type: ObjectTypeDefinition
+		private readonly type: ObjectTypeDefinition,
+		private readonly opts: {
+			remainingCount?: number;
+			onApplyAll?: () => void;
+			onSkipAll?: () => void;
+			onDone?: () => void;
+		} = {}
 	) {
 		super(app);
 	}
@@ -38,7 +49,17 @@ export class ApplyObjectTypeModal extends Modal {
 
 	private render(): void {
 		this.contentEl.empty();
+		const { remainingCount = 0 } = this.opts;
+		const total = remainingCount + 1;
+
 		this.titleEl.setText(`Apply ${this.type.name} template?`);
+
+		if (remainingCount > 0) {
+			this.contentEl.createDiv({
+				cls: "obsidian-objects-apply-queue",
+				text: `${total} notes are waiting — showing 1 of ${total}.`,
+			});
+		}
 
 		const desc = this.contentEl.createDiv({
 			cls: "obsidian-objects-apply-desc",
@@ -95,9 +116,30 @@ export class ApplyObjectTypeModal extends Modal {
 		const footer = this.contentEl.createDiv({
 			cls: "obsidian-objects-modal__footer",
 		});
+
+		if (remainingCount > 0) {
+			// Batch actions — left-aligned so they read as secondary choices.
+			const batchArea = footer.createDiv({
+				cls: "obsidian-objects-apply-batch",
+			});
+			new ButtonComponent(batchArea)
+				.setButtonText(`Skip all ${total}`)
+				.onClick(() => {
+					this.opts.onSkipAll?.();
+					this.fireDone();
+					this.close();
+				});
+			new ButtonComponent(batchArea)
+				.setButtonText(`Apply to all ${total}`)
+				.onClick(() => void this.handleApplyAll());
+		}
+
 		new ButtonComponent(footer)
 			.setButtonText("Skip")
-			.onClick(() => this.close());
+			.onClick(() => {
+				this.fireDone();
+				this.close();
+			});
 		new ButtonComponent(footer)
 			.setButtonText(`Apply ${this.type.name} template`)
 			.setCta()
@@ -108,15 +150,39 @@ export class ApplyObjectTypeModal extends Modal {
 		try {
 			await this.manager.stampObjectType(this.file, this.type);
 			new Notice(`Applied ${this.type.name} template`);
-			this.close();
 		} catch (err) {
 			console.error(err);
 			new Notice(`Failed to apply template: ${err}`);
 		}
+		this.fireDone();
+		this.close();
+	}
+
+	private async handleApplyAll(): Promise<void> {
+		try {
+			await this.manager.stampObjectType(this.file, this.type);
+			new Notice(`Applied ${this.type.name} template`);
+		} catch (err) {
+			console.error(err);
+			new Notice(`Failed to apply template: ${err}`);
+		}
+		this.opts.onApplyAll?.();
+		this.fireDone();
+		this.close();
+	}
+
+	/** Fire the `onDone` callback exactly once (guards against double-fire). */
+	private fireDone(): void {
+		if (this.doneFired) return;
+		this.doneFired = true;
+		this.opts.onDone?.();
 	}
 
 	onClose(): void {
 		this.keyboardCleanup?.();
 		this.keyboardCleanup = null;
+		// Fallback: covers escape-key / click-outside dismissal where no
+		// explicit action handler ran.
+		this.fireDone();
 	}
 }

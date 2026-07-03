@@ -229,6 +229,19 @@
   background: var(--interactive-hover);
 }
 
+/* Apply-object-type modal — queue context + batch buttons */
+.obsidian-objects-apply-queue {
+  font-size: 0.85em;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+
+.obsidian-objects-apply-batch {
+  display: flex;
+  gap: 0.4rem;
+  flex: 1;
+}
+
 /* Change-object-type modal */
 .obsidian-objects-change-summary {
   background: var(--background-secondary);

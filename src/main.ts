@@ -10,7 +10,7 @@ import {
 	MarkdownView,
 } from "obsidian";
 import { EditorView } from "@codemirror/view";
-import { DEFAULT_DATA, ObjectsPluginData } from "./types";
+import { DEFAULT_DATA, ObjectTypeDefinition, ObjectsPluginData } from "./types";
 import { ObjectTypeManager } from "./objectTypeManager";
 import { AtSuggest } from "./suggest/atSuggest";
 import { ObjectTypeSettingsModal } from "./modals/objectTypeSettingsModal";
@@ -48,6 +48,9 @@ export default class ObjectsPlugin extends Plugin {
 	private mentionPopup: MentionPopup | null = null;
 	private selectionSuggest: SelectionSuggest | null = null;
 	private typeCommandIds: string[] = [];
+	private autoApplyQueue: Array<{ file: TFile; type: ObjectTypeDefinition }> =
+		[];
+	private autoApplyModalOpen = false;
 
 	async onload(): Promise<void> {
 		const loaded = (await this.loadData()) as ObjectsPluginData | null;
@@ -435,21 +438,97 @@ export default class ObjectsPlugin extends Plugin {
 			const currentType = this.manager.getTypeForPath(file.path);
 			if (!currentType || currentType.id !== type.id) return;
 
-			// Skip if the type key is already set correctly — this handles
-			// notes the plugin just created (which already have frontmatter)
-			// as well as notes moved in from another typed folder.
-			const cache = this.app.metadataCache.getFileCache(current);
-			const typeKey = this.manager.getSettings().typePropertyName;
-			const qualifiedName = this.manager.getQualifiedName(type);
-			if (cache?.frontmatter?.[typeKey] === qualifiedName) return;
+			// Skip if there is nothing the template would add. This is the
+			// primary guard against Obsidian Sync replays: a note that was
+			// created on another device already has the full frontmatter set,
+			// so `hasAnythingToApply` returns false and we never prompt.
+			if (!this.hasAnythingToApply(current, currentType)) return;
 
-			new ApplyObjectTypeModal(
-				this.app,
-				this.manager,
-				current,
-				type
-			).open();
+			this.enqueueAutoApply(current, currentType);
 		}, 300);
+	}
+
+	/**
+	 * Return true if `stampObjectType` would actually add anything to `file`.
+	 * Mirrors the `willAdd` logic in `ApplyObjectTypeModal` so we can skip
+	 * the prompt entirely when the note is already fully stamped (e.g. a file
+	 * replayed by Obsidian Sync from another device).
+	 */
+	private hasAnythingToApply(
+		file: TFile,
+		type: ObjectTypeDefinition
+	): boolean {
+		const cache = this.app.metadataCache.getFileCache(file);
+		const fm = (cache?.frontmatter ?? {}) as Record<string, unknown>;
+		const typeKey = this.manager.getSettings().typePropertyName;
+		const qualifiedName = this.manager.getQualifiedName(type);
+		const props = this.manager.getEffectiveProperties(type);
+		const chain = this.manager.getTypeChain(type);
+
+		if (
+			chain.some((t) => t.showTypeProperty) &&
+			fm[typeKey] !== qualifiedName
+		)
+			return true;
+		if (props.some((p) => !(p.name in fm))) return true;
+		if (chain.some((t) => t.showTags) && !("tags" in fm)) return true;
+		if (chain.some((t) => t.showAliases) && !("aliases" in fm)) return true;
+		return false;
+	}
+
+	/**
+	 * Add a file to the auto-apply queue. If no modal is currently open,
+	 * show the next one immediately; otherwise the queue drains automatically
+	 * as each modal closes.
+	 */
+	private enqueueAutoApply(file: TFile, type: ObjectTypeDefinition): void {
+		this.autoApplyQueue.push({ file, type });
+		if (!this.autoApplyModalOpen) {
+			this.showNextAutoApplyModal();
+		}
+	}
+
+	private showNextAutoApplyModal(): void {
+		const next = this.autoApplyQueue.shift();
+		if (!next) {
+			this.autoApplyModalOpen = false;
+			return;
+		}
+		this.autoApplyModalOpen = true;
+		const remaining = this.autoApplyQueue.length;
+
+		new ApplyObjectTypeModal(this.app, this.manager, next.file, next.type, {
+			remainingCount: remaining,
+			onApplyAll: () => void this.applyAllQueued(),
+			onSkipAll: () => {
+				this.autoApplyQueue = [];
+			},
+			onDone: () => {
+				this.autoApplyModalOpen = false;
+				this.showNextAutoApplyModal();
+			},
+		}).open();
+	}
+
+	private async applyAllQueued(): Promise<void> {
+		const items = [...this.autoApplyQueue];
+		this.autoApplyQueue = [];
+		let count = 0;
+		for (const { file, type } of items) {
+			try {
+				await this.manager.stampObjectType(file, type);
+				count++;
+			} catch (err) {
+				console.error(
+					`Failed to apply ${type.name} template to ${file.path}:`,
+					err
+				);
+			}
+		}
+		if (count > 0)
+			new Notice(
+				`Applied template to ${count} additional note${count === 1 ? "" : "s"}`
+			);
 	}
 
 	/**
