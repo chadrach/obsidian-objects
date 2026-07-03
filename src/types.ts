@@ -76,6 +76,13 @@ export interface ObjectTypeDefinition {
 	updatedAt: number;
 	/** Whether this type was auto-generated (e.g. Daily Notes). */
 	managed?: "daily-notes" | null;
+	/**
+	 * When true, new notes of this type get an H1 heading inserted at the top
+	 * of the note body (e.g. `# My Note Title`) based on the filename.
+	 * `stampObjectType` also adds one to existing notes that lack it.
+	 * Toggling this off does not remove headings from existing notes.
+	 */
+	addH1Title?: boolean;
 }
 
 export interface ObjectsPluginData {

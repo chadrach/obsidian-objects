@@ -148,6 +148,7 @@ export class ObjectTypeManager {
 		showTags?: boolean;
 		showAliases?: boolean;
 		showTypeProperty?: boolean;
+		addH1Title?: boolean;
 	}): Promise<ObjectTypeDefinition> {
 		const folderPath = normalizePath(input.folderPath);
 		if (this.getTypeByFolder(folderPath)) {
@@ -168,6 +169,7 @@ export class ObjectTypeManager {
 			showTags: input.showTags ?? false,
 			showAliases: input.showAliases ?? false,
 			showTypeProperty: input.showTypeProperty ?? false,
+			addH1Title: input.addH1Title ?? false,
 			managed: input.managed ?? null,
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
@@ -198,6 +200,7 @@ export class ObjectTypeManager {
 				| "showTags"
 				| "showAliases"
 				| "showTypeProperty"
+				| "addH1Title"
 			>
 		>,
 		options: {
@@ -222,6 +225,7 @@ export class ObjectTypeManager {
 			type.showAliases = patch.showAliases;
 		if (patch.showTypeProperty !== undefined)
 			type.showTypeProperty = patch.showTypeProperty;
+		if (patch.addH1Title !== undefined) type.addH1Title = patch.addH1Title;
 		type.updatedAt = Date.now();
 
 		let mutation: PropertyMutation | undefined;
@@ -522,7 +526,11 @@ export class ObjectTypeManager {
 			type.folderPath,
 			title || "Untitled"
 		);
-		const content = stringifyFrontmatter(fm);
+		let content = stringifyFrontmatter(fm);
+		if (chain.some((t) => t.addH1Title)) {
+			const noteTitle = title || "Untitled";
+			content += `# ${noteTitle}\n`;
+		}
 		this.pluginManagedPaths.add(path);
 		const file = await this.app.vault.create(path, content);
 		return file;
@@ -559,7 +567,37 @@ export class ObjectTypeManager {
 				fm.aliases = [];
 		});
 
+		if (chain.some((t) => t.addH1Title)) {
+			await this.ensureH1Title(file);
+		}
+
 		for (const l of this.listeners) l();
+	}
+
+	/**
+	 * If the note body (content after the frontmatter block) does not already
+	 * begin with an H1 heading, prepend `# {basename}` to it.
+	 */
+	private async ensureH1Title(file: TFile): Promise<void> {
+		const raw = await this.app.vault.read(file);
+		// Strip the leading frontmatter block (---\n...\n---) if present.
+		let bodyStart = 0;
+		if (raw.startsWith("---")) {
+			const closeIdx = raw.indexOf("\n---", 3);
+			if (closeIdx !== -1) {
+				bodyStart = closeIdx + 4; // skip past the closing ---
+				// Skip a single trailing newline after the closing delimiter.
+				if (raw[bodyStart] === "\n") bodyStart++;
+			}
+		}
+		const body = raw.slice(bodyStart);
+		// Already has an H1 — nothing to do.
+		if (/^#\s/.test(body)) return;
+
+		const heading = `# ${file.basename}\n`;
+		const newContent =
+			raw.slice(0, bodyStart) + heading + (body ? "\n" + body : "");
+		await this.app.vault.modify(file, newContent);
 	}
 
 	/**

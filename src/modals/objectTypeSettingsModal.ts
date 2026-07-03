@@ -510,6 +510,16 @@ export class ObjectTypeSettingsModal extends Modal {
 					draft.showAliases = v;
 				})
 			);
+		new Setting(reserved)
+			.setName("Add H1 title heading")
+			.setDesc(
+				"When creating a new note of this type, insert `# Note Title` as the first line of the note body. Also added to existing notes (by filename) when the auto-apply prompt runs, if no H1 is already present."
+			)
+			.addToggle((t) =>
+				t.setValue(draft.addH1Title ?? false).onChange((v) => {
+					draft.addH1Title = v;
+				})
+			);
 
 		for (const prop of draft.properties) {
 			const row = container.createDiv({
@@ -959,6 +969,7 @@ export class ObjectTypeSettingsModal extends Modal {
 					showTypeProperty: newShowTypeProperty,
 					showTags: draft.showTags ?? false,
 					showAliases: draft.showAliases ?? false,
+					addH1Title: draft.addH1Title ?? false,
 				},
 				{ removeDeletedFromNotes: removeFromNotes, typePropertyAction }
 			);
@@ -994,6 +1005,7 @@ export class ObjectTypeSettingsModal extends Modal {
 					showTypeProperty: draft.showTypeProperty ?? false,
 					showTags: draft.showTags ?? false,
 					showAliases: draft.showAliases ?? false,
+					addH1Title: draft.addH1Title ?? false,
 				});
 			} catch (err) {
 				new Notice(String(err));
@@ -1024,6 +1036,7 @@ interface TypeDraft {
 	showTypeProperty?: boolean;
 	showTags?: boolean;
 	showAliases?: boolean;
+	addH1Title?: boolean;
 }
 
 function blankDraft(initialFolderPath = ""): TypeDraft {
@@ -1046,6 +1059,7 @@ function blankDraft(initialFolderPath = ""): TypeDraft {
 		showTypeProperty: false,
 		showTags: false,
 		showAliases: false,
+		addH1Title: false,
 	};
 }
 
@@ -1061,6 +1075,7 @@ function draftFromType(type: ObjectTypeDefinition): TypeDraft {
 		showTypeProperty: type.showTypeProperty ?? false,
 		showTags: type.showTags ?? false,
 		showAliases: type.showAliases ?? false,
+		addH1Title: type.addH1Title ?? false,
 	};
 }
 
