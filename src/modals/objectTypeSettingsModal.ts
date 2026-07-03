@@ -62,6 +62,7 @@ export class ObjectTypeSettingsModal extends Modal {
 		private readonly opts: {
 			initialTypeId?: string;
 			initialFolderPath?: string;
+			openNew?: boolean;
 		} = {}
 	) {
 		super(app);
@@ -70,7 +71,10 @@ export class ObjectTypeSettingsModal extends Modal {
 	onOpen(): void {
 		this.modalEl.addClass("obsidian-objects-modal");
 		this.keyboardCleanup = trackVisualViewportForModal(this.modalEl);
-		if (this.opts.initialTypeId) {
+		if (this.opts.openNew) {
+			this.draft = blankDraft();
+			this.screen = "edit";
+		} else if (this.opts.initialTypeId) {
 			const type = this.manager.getTypeById(this.opts.initialTypeId);
 			if (type) {
 				this.draft = draftFromType(type);

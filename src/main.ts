@@ -47,6 +47,7 @@ export default class ObjectsPlugin extends Plugin {
 	private suggest: AtSuggest | null = null;
 	private mentionPopup: MentionPopup | null = null;
 	private selectionSuggest: SelectionSuggest | null = null;
+	private typeCommandIds: string[] = [];
 
 	async onload(): Promise<void> {
 		const loaded = (await this.loadData()) as ObjectsPluginData | null;
@@ -208,9 +209,9 @@ export default class ObjectsPlugin extends Plugin {
 			callback: () => this.openTypeSettings(),
 		});
 		this.addCommand({
-			id: "create-new-object",
-			name: "Create new object",
-			callback: () => this.openTypeSettings(),
+			id: "create-new-object-type",
+			name: "Create new object type",
+			callback: () => this.openTypeSettings({ openNew: true }),
 		});
 		this.addCommand({
 			id: "insert-object-mention",
@@ -230,6 +231,14 @@ export default class ObjectsPlugin extends Plugin {
 			// metadataTypeManager has finished its own initialization.
 			this.manager.registerObsidianPropertyTypes();
 		});
+
+		// --- Per-type "Create new X" commands ----------------------------
+		// Register a command for every user-defined type and keep them in sync
+		// whenever types are added, renamed, or removed.
+		this.syncTypeCommands();
+		this.register(
+			this.manager.onChange(() => this.syncTypeCommands())
+		);
 	}
 
 	onunload(): void {
@@ -239,10 +248,15 @@ export default class ObjectsPlugin extends Plugin {
 
 	// ---------- public API used by sub-components ----------
 
-	openTypeSettings(typeId?: string, folderPath?: string): void {
+	openTypeSettings(opts?: {
+		typeId?: string;
+		folderPath?: string;
+		openNew?: boolean;
+	}): void {
 		new ObjectTypeSettingsModal(this.app, this.manager, {
-			initialTypeId: typeId,
-			initialFolderPath: folderPath,
+			initialTypeId: opts?.typeId,
+			initialFolderPath: opts?.folderPath,
+			openNew: opts?.openNew,
 		}).open();
 	}
 
@@ -256,6 +270,32 @@ export default class ObjectsPlugin extends Plugin {
 
 	// ---------- private helpers ----------
 
+	/**
+	 * Keep the palette in sync with the current type list. On each call, remove
+	 * any stale per-type commands then re-register one for every user-defined
+	 * (non-managed) type. Commands are keyed by the type's stable id so renames
+	 * update the displayed name correctly.
+	 */
+	private syncTypeCommands(): void {
+		for (const fullId of this.typeCommandIds) {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			(this.app as any).commands.removeCommand(fullId);
+		}
+		this.typeCommandIds = [];
+
+		for (const type of this.manager.getTypes()) {
+			if (type.managed) continue;
+			// addCommand returns the Command with its id already prefixed by the
+			// plugin manifest id (e.g. "obsidian-objects:create-new-abc123").
+			const cmd = this.addCommand({
+				id: `create-new-${type.id}`,
+				name: `Create new ${type.name}`,
+				callback: () => void this.createNewObjectFromMenu(type.id),
+			});
+			this.typeCommandIds.push(cmd.id);
+		}
+	}
+
 	private addFolderMenuItems(menu: Menu, folder: TFolder): void {
 		const type = this.manager.getTypeByFolder(folder.path);
 		menu.addItem((item: MenuItem) => {
@@ -265,7 +305,7 @@ export default class ObjectsPlugin extends Plugin {
 				)
 				.setIcon("settings-2")
 				.onClick(() => {
-					this.openTypeSettings(type?.id, folder.path);
+					this.openTypeSettings({ typeId: type?.id, folderPath: folder.path });
 				});
 		});
 		if (type) {
