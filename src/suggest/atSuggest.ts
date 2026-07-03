@@ -9,6 +9,7 @@ import {
 	TFile,
 	setIcon,
 } from "obsidian";
+import { EditorView } from "@codemirror/view";
 import { ObjectTypeDefinition } from "../types";
 import { ObjectTypeManager } from "../objectTypeManager";
 import { formatDate, parseNaturalDate } from "../dateParser";
@@ -336,17 +337,29 @@ export class AtSuggest extends EditorSuggest<Suggestion> {
 		const { editor, start, end } = context;
 		const trigger = this.manager.getSettings().triggerChar || "@";
 		const replacement = `${trigger}${type.pluralName}/`;
-		editor.replaceRange(replacement, start, end);
-		const newCh = start.ch + replacement.length;
-		editor.setCursor({ line: start.line, ch: newCh });
+		// Set activeFilter before the dispatch so getSuggestions sees it
+		// immediately when the EditorSuggest re-evaluates on the same frame.
 		this.activeFilter = {
 			typeId: type.id,
 			prefixLength: `${type.pluralName}/`.length,
 		};
-		// Re-open the suggester at the new cursor position.
-		this.close();
-		// Obsidian will reopen the suggester when it detects the trigger on
-		// the next input event; forcing a fake space keeps the user's flow.
+		const cmView = (editor as unknown as { cm?: EditorView }).cm;
+		if (cmView) {
+			// Dispatch as "input.type" so Obsidian's EditorSuggest bridge
+			// re-triggers onTrigger and updates the popup in-place, showing
+			// the 10 most-recent notes for this type without closing first.
+			const from = cmView.state.doc.line(start.line + 1).from + start.ch;
+			const to = cmView.state.doc.line(end.line + 1).from + end.ch;
+			cmView.dispatch({
+				changes: { from, to, insert: replacement },
+				selection: { anchor: from + replacement.length },
+				userEvent: "input.type",
+			});
+		} else {
+			editor.replaceRange(replacement, start, end);
+			editor.setCursor({ line: start.line, ch: start.ch + replacement.length });
+			this.close();
+		}
 	}
 
 	private insertWikilink(
