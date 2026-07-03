@@ -219,14 +219,6 @@ export default class ObjectsPlugin extends Plugin {
 				this.openMentionFromCommand(editor);
 			},
 		});
-		this.addCommand({
-			id: "open-object-mention-popup",
-			name: "Open object mention popup (mobile)",
-			editorCallback: (editor) => {
-				this.openMentionFromCommand(editor);
-			},
-		});
-
 		// --- Settings tab --------------------------------------------
 		this.addSettingTab(new ObjectsSettingTab(this.app, this));
 
