@@ -56,7 +56,7 @@ Type the trigger character (default `@`) anywhere in the editor to open a fuzzy-
 
 **Selection-to-link**: select text in the editor and press `@`. A floating popup opens while the selection stays highlighted; picking a note inserts a wikilink using the selected text as the display name.
 
-An *Insert object mention* command is available in the command palette for keyboardless workflows.
+An *Insert object mention* command is available in the command palette. A separate *Open object mention popup (mobile)* command with an `@` icon is provided for pinning to the mobile toolbar.
 
 ### Link icons
 
