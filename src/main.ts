@@ -215,13 +215,6 @@ export default class ObjectsPlugin extends Plugin {
 		this.addCommand({
 			id: "insert-object-mention",
 			name: "Insert object mention",
-			editorCallback: (editor) => {
-				this.openMentionFromCommand(editor);
-			},
-		});
-		this.addCommand({
-			id: "open-object-mention-popup",
-			name: "Open object mention popup (mobile)",
 			icon: "at-sign",
 			editorCallback: (editor) => {
 				this.openMentionFromCommand(editor);
