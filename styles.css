@@ -78,6 +78,12 @@
   margin-top: 0.15rem;
 }
 
+.obsidian-objects-location-adopt-hint {
+  font-size: 0.85em;
+  color: var(--text-accent);
+  margin-top: 0.25rem;
+}
+
 .obsidian-objects-empty {
   color: var(--text-muted);
   font-style: italic;

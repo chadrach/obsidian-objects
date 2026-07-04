@@ -323,6 +323,7 @@ export class ObjectTypeSettingsModal extends Modal {
 					.setValue(draft.name)
 					.onChange((v) => {
 						draft.name = v;
+						updateLocationVisual();
 					})
 			);
 
@@ -337,6 +338,7 @@ export class ObjectTypeSettingsModal extends Modal {
 					.setValue(draft.pluralName)
 					.onChange((v) => {
 						draft.pluralName = v;
+						updateLocationVisual();
 					})
 			);
 
@@ -350,6 +352,7 @@ export class ObjectTypeSettingsModal extends Modal {
 			);
 		let locationDisplay: HTMLElement;
 		let locationPickerBtn: ButtonComponent;
+		let adoptHintEl: HTMLElement;
 		const updateLocationVisual = () => {
 			if (!locationDisplay || !locationPickerBtn) return;
 			if (draft.parentId) {
@@ -361,12 +364,43 @@ export class ObjectTypeSettingsModal extends Modal {
 					: `Inside ${parent?.name ?? "parent"} (vault root)`;
 				locationDisplay.setText(label);
 				locationPickerBtn.setDisabled(true);
+				adoptHintEl?.hide();
 			} else {
 				const path = draft.locationPath || "";
 				locationDisplay.setText(
 					path ? `Current: ${path}` : "Vault root"
 				);
 				locationPickerBtn.setDisabled(false);
+
+				// For new types: show a hint when the composed folder path
+				// already exists so the user knows it can be adopted.
+				if (!draft.existingId && adoptHintEl) {
+					const rawPlural =
+						draft.pluralName.trim() ||
+						(draft.name.trim()
+							? draft.name.trim() + "s"
+							: "");
+					const safePlural = rawPlural
+						? safeFolderName(rawPlural)
+						: null;
+					const targetPath = safePlural
+						? joinPath(path, safePlural)
+						: null;
+					const occupant = targetPath
+						? this.app.vault.getAbstractFileByPath(targetPath)
+						: null;
+					if (
+						occupant instanceof TFolder &&
+						!this.manager.getTypeByFolder(targetPath!)
+					) {
+						adoptHintEl.setText(
+							`Folder "${targetPath}" already exists and will be adopted — existing notes will not be modified.`
+						);
+						adoptHintEl.show();
+					} else {
+						adoptHintEl.hide();
+					}
+				}
 			}
 		};
 		parentSetting.addDropdown((d) => {
@@ -391,6 +425,10 @@ export class ObjectTypeSettingsModal extends Modal {
 		locationDisplay = locationSetting.descEl.createDiv({
 			cls: "obsidian-objects-location-current",
 		});
+		adoptHintEl = locationSetting.descEl.createDiv({
+			cls: "obsidian-objects-location-adopt-hint",
+		});
+		adoptHintEl.hide();
 		locationSetting.addButton((b) => {
 			locationPickerBtn = b
 				.setButtonText("Pick location…")
@@ -979,7 +1017,7 @@ export class ObjectTypeSettingsModal extends Modal {
 			);
 		} else {
 			// New types: a same-named folder owned by another type is a hard
-			// no. A bare folder at the same path is fine — we adopt it.
+			// no. A bare folder at the same path can be adopted — ask first.
 			const occupant =
 				this.app.vault.getAbstractFileByPath(targetFolderPath);
 			if (occupant instanceof TFile) {
@@ -996,6 +1034,16 @@ export class ObjectTypeSettingsModal extends Modal {
 					);
 					return;
 				}
+				// Existing bare folder — confirm adoption before proceeding.
+				const choice = await confirmAction(this.app, {
+					title: "Adopt existing folder?",
+					body:
+						`A folder named "${targetFolderPath}" already exists. ` +
+						`Register it as the "${trimmedName}" object type? ` +
+						`Existing notes will not be modified.`,
+					confirmText: "Adopt folder",
+				});
+				if (choice !== "confirm") return;
 			}
 
 			try {
