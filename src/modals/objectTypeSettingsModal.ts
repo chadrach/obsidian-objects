@@ -888,37 +888,55 @@ export class ObjectTypeSettingsModal extends Modal {
 			if (!type) return;
 
 			if (targetFolderPath !== type.folderPath) {
-				// Block destructive name/location collisions before the
-				// move starts — moveType would silently merge into an
-				// existing folder otherwise.
 				const occupant =
 					this.app.vault.getAbstractFileByPath(targetFolderPath);
-				if (occupant) {
-					const kind =
-						occupant instanceof TFile ? "file" : "folder";
+
+				if (occupant instanceof TFile) {
 					new Notice(
-						`Cannot move: a ${kind} already exists at "${targetFolderPath}".`
+						`Cannot move: a file already exists at "${targetFolderPath}".`
 					);
 					return;
 				}
 
-				const impact = this.manager.getMoveImpact(draft.existingId);
-				const oldParent = parentDir(type.folderPath);
-				const isPureRename =
-					oldParent === (draft.locationPath || "");
-				const title = isPureRename
-					? "Rename type folder?"
-					: "Move type folder?";
-				const body =
-					`"${type.folderPath}" will become "${targetFolderPath}". ` +
-					`${impact.fileCount} file(s) and ${impact.subfolderCount} ` +
-					`subfolder(s) will move with it.`;
-				const choice = await confirmAction(this.app, {
-					title,
-					body,
-					confirmText: isPureRename ? "Rename" : "Move",
-				});
-				if (choice !== "confirm") return;
+				if (occupant instanceof TFolder) {
+					const owner =
+						this.manager.getTypeByFolder(targetFolderPath);
+					if (owner) {
+						new Notice(
+							`Cannot move: "${targetFolderPath}" is already registered as type "${owner.name}".`
+						);
+						return;
+					}
+					// Bare existing folder — offer to merge/adopt it.
+					const impact = this.manager.getMoveImpact(draft.existingId);
+					const choice = await confirmAction(this.app, {
+						title: "Adopt existing folder?",
+						body:
+							`A folder named "${targetFolderPath}" already exists. ` +
+							`${impact.fileCount > 0 ? `${impact.fileCount} note(s) from "${type.folderPath}" will be moved into it. ` : `"${type.folderPath}" will be removed. `}` +
+							`Existing notes in "${targetFolderPath}" will not be modified.`,
+						confirmText: "Adopt folder",
+					});
+					if (choice !== "confirm") return;
+				} else {
+					const impact = this.manager.getMoveImpact(draft.existingId);
+					const oldParent = parentDir(type.folderPath);
+					const isPureRename =
+						oldParent === (draft.locationPath || "");
+					const title = isPureRename
+						? "Rename type folder?"
+						: "Move type folder?";
+					const body =
+						`"${type.folderPath}" will become "${targetFolderPath}". ` +
+						`${impact.fileCount} file(s) and ${impact.subfolderCount} ` +
+						`subfolder(s) will move with it.`;
+					const choice = await confirmAction(this.app, {
+						title,
+						body,
+						confirmText: isPureRename ? "Rename" : "Move",
+					});
+					if (choice !== "confirm") return;
+				}
 				try {
 					await this.manager.moveType(
 						draft.existingId,
