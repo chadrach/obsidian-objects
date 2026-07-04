@@ -438,9 +438,20 @@ export class ObjectTypeSettingsModal extends Modal {
 		});
 		updateLocationVisual();
 
+		const iconDesc = document.createDocumentFragment();
+		iconDesc.append(
+			'Lucide icon name, e.g. "user", "building", "calendar". Browse icons at '
+		);
+		const iconLink = document.createElement("a");
+		iconLink.textContent = "lucide.dev";
+		iconLink.href = "https://lucide.dev/icons/";
+		iconLink.target = "_blank";
+		iconLink.rel = "noopener";
+		iconDesc.append(iconLink);
+		iconDesc.append(".");
 		new Setting(this.contentEl)
 			.setName("Icon")
-			.setDesc("Lucide icon name, e.g. \"user\", \"building\", \"calendar\".")
+			.setDesc(iconDesc)
 			.addText((t) =>
 				t
 					.setValue(draft.icon)
