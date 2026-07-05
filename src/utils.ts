@@ -62,6 +62,14 @@ export function isUnder(childPath: string, parentPath: string): boolean {
 	return c === p || c.startsWith(p + "/");
 }
 
+/** True if `filePath` lives directly inside `folderPath` (not in a sub-folder). */
+export function isDirectChild(filePath: string, folderPath: string): boolean {
+	const f = normalizePath(filePath);
+	const p = normalizePath(folderPath);
+	const parent = f.includes("/") ? f.slice(0, f.lastIndexOf("/")) : "";
+	return parent === p;
+}
+
 export function filenameWithoutExtension(fileName: string): string {
 	const dot = fileName.lastIndexOf(".");
 	return dot < 0 ? fileName : fileName.slice(0, dot);

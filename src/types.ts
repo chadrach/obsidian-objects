@@ -83,6 +83,13 @@ export interface ObjectTypeDefinition {
 	 * Toggling this off does not remove headings from existing notes.
 	 */
 	addH1Title?: boolean;
+	/**
+	 * When true, notes in any subfolder of this type's folder are treated as
+	 * belonging to this type (unless the subfolder is explicitly registered as
+	 * its own object type). When false (the default), only notes placed
+	 * directly inside `folderPath` are matched.
+	 */
+	extendToSubfolders?: boolean;
 }
 
 export interface ObjectsPluginData {

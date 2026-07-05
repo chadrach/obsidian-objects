@@ -11,6 +11,7 @@ import {
 import {
 	ensureFolder,
 	filesInFolder,
+	isDirectChild,
 	isUnder,
 	joinPath,
 	stringifyFrontmatter,
@@ -66,7 +67,10 @@ export class ObjectTypeManager {
 	getTypeForPath(filePath: string): ObjectTypeDefinition | undefined {
 		let best: ObjectTypeDefinition | undefined;
 		for (const t of this.data.types) {
-			if (isUnder(filePath, t.folderPath)) {
+			const matches = t.extendToSubfolders
+				? isUnder(filePath, t.folderPath)
+				: isDirectChild(filePath, t.folderPath);
+			if (matches) {
 				if (!best || t.folderPath.length > best.folderPath.length) {
 					best = t;
 				}
@@ -149,6 +153,7 @@ export class ObjectTypeManager {
 		showAliases?: boolean;
 		showTypeProperty?: boolean;
 		addH1Title?: boolean;
+		extendToSubfolders?: boolean;
 	}): Promise<ObjectTypeDefinition> {
 		const folderPath = normalizePath(input.folderPath);
 		if (this.getTypeByFolder(folderPath)) {
@@ -170,6 +175,7 @@ export class ObjectTypeManager {
 			showAliases: input.showAliases ?? false,
 			showTypeProperty: input.showTypeProperty ?? false,
 			addH1Title: input.addH1Title ?? false,
+			extendToSubfolders: input.extendToSubfolders ?? false,
 			managed: input.managed ?? null,
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
@@ -201,6 +207,7 @@ export class ObjectTypeManager {
 				| "showAliases"
 				| "showTypeProperty"
 				| "addH1Title"
+				| "extendToSubfolders"
 			>
 		>,
 		options: {
@@ -226,6 +233,8 @@ export class ObjectTypeManager {
 		if (patch.showTypeProperty !== undefined)
 			type.showTypeProperty = patch.showTypeProperty;
 		if (patch.addH1Title !== undefined) type.addH1Title = patch.addH1Title;
+		if (patch.extendToSubfolders !== undefined)
+			type.extendToSubfolders = patch.extendToSubfolders;
 		type.updatedAt = Date.now();
 
 		let mutation: PropertyMutation | undefined;

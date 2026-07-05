@@ -573,6 +573,16 @@ export class ObjectTypeSettingsModal extends Modal {
 					draft.addH1Title = v;
 				})
 			);
+		new Setting(reserved)
+			.setName("Extend to subfolders")
+			.setDesc(
+				"When enabled, notes in any subfolder of this type's folder are treated as belonging to this type — unless that subfolder is registered as its own object type."
+			)
+			.addToggle((t) =>
+				t.setValue(draft.extendToSubfolders ?? false).onChange((v) => {
+					draft.extendToSubfolders = v;
+				})
+			);
 
 		for (const prop of draft.properties) {
 			const row = container.createDiv({
@@ -1041,6 +1051,7 @@ export class ObjectTypeSettingsModal extends Modal {
 					showTags: draft.showTags ?? false,
 					showAliases: draft.showAliases ?? false,
 					addH1Title: draft.addH1Title ?? false,
+					extendToSubfolders: draft.extendToSubfolders ?? false,
 				},
 				{ removeDeletedFromNotes: removeFromNotes, typePropertyAction }
 			);
@@ -1087,6 +1098,7 @@ export class ObjectTypeSettingsModal extends Modal {
 					showTags: draft.showTags ?? false,
 					showAliases: draft.showAliases ?? false,
 					addH1Title: draft.addH1Title ?? false,
+					extendToSubfolders: draft.extendToSubfolders ?? false,
 				});
 			} catch (err) {
 				new Notice(String(err));
@@ -1118,6 +1130,7 @@ interface TypeDraft {
 	showTags?: boolean;
 	showAliases?: boolean;
 	addH1Title?: boolean;
+	extendToSubfolders?: boolean;
 }
 
 function blankDraft(initialFolderPath = ""): TypeDraft {
@@ -1141,6 +1154,7 @@ function blankDraft(initialFolderPath = ""): TypeDraft {
 		showTags: false,
 		showAliases: false,
 		addH1Title: false,
+		extendToSubfolders: false,
 	};
 }
 
@@ -1157,6 +1171,7 @@ function draftFromType(type: ObjectTypeDefinition): TypeDraft {
 		showTags: type.showTags ?? false,
 		showAliases: type.showAliases ?? false,
 		addH1Title: type.addH1Title ?? false,
+		extendToSubfolders: type.extendToSubfolders ?? false,
 	};
 }
 
