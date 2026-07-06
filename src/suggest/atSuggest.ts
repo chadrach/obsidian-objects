@@ -42,6 +42,7 @@ type Suggestion =
 			dailyType: ObjectTypeDefinition | null;
 			format: string;
 			folder: string;
+			templatePath: string;
 	  };
 
 interface ActiveFilter {
@@ -144,7 +145,7 @@ export class AtSuggest extends EditorSuggest<Suggestion> {
 			if (dailyType && query.length > 0) {
 				const parsed = parseNaturalDate(query);
 				if (parsed) {
-					const { format, folder } = getDailyNotesSettings(
+					const { format, folder, templatePath } = getDailyNotesSettings(
 						this.app,
 						dailyType
 					);
@@ -155,6 +156,7 @@ export class AtSuggest extends EditorSuggest<Suggestion> {
 						dailyType,
 						format,
 						folder,
+						templatePath,
 					});
 				}
 			}
@@ -438,17 +440,16 @@ export class AtSuggest extends EditorSuggest<Suggestion> {
 		suggestion: Extract<Suggestion, { kind: "daily-note" }>
 	): Promise<void> {
 		const name = formatDate(suggestion.date, suggestion.format);
-		const path = joinPath(suggestion.folder, `${name}.md`);
-		let file = this.app.vault.getAbstractFileByPath(path);
+		const targetPath = joinPath(suggestion.folder, `${name}.md`);
+		let file = this.app.vault.getAbstractFileByPath(targetPath);
 		if (!(file instanceof TFile)) {
-			if (suggestion.dailyType) {
-				file = await this.manager.createObjectNote(
-					suggestion.dailyType,
-					name
-				);
-			} else {
-				file = await this.app.vault.create(path, "");
-			}
+			file = await this.manager.createDailyNote(
+				suggestion.dailyType,
+				name,
+				suggestion.date,
+				suggestion.templatePath,
+				targetPath
+			);
 		}
 		if (file instanceof TFile) {
 			this.insertWikilink(context, name, file);
@@ -525,18 +526,25 @@ function detectPropertyLinkedType(
 function getDailyNotesSettings(
 	app: App,
 	dailyType: ObjectTypeDefinition
-): { format: string; folder: string } {
+): { format: string; folder: string; templatePath: string } {
 	const internal = (app as unknown as {
 		internalPlugins?: {
 			getPluginById?: (id: string) => {
-				instance?: { options?: { format?: string; folder?: string } };
+				instance?: {
+					options?: {
+						format?: string;
+						folder?: string;
+						template?: string;
+					};
+				} | null;
 			} | null;
 		};
 	}).internalPlugins;
 	const opts =
 		internal?.getPluginById?.("daily-notes")?.instance?.options ?? {};
 	return {
-		format: opts.format || "YYYY-MM-DD",
-		folder: opts.folder || dailyType.folderPath,
+		format: opts.format?.trim() || "YYYY-MM-DD",
+		folder: opts.folder?.trim() || dailyType.folderPath,
+		templatePath: opts.template?.trim() || "",
 	};
 }

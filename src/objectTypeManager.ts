@@ -8,6 +8,7 @@ import {
 	PropertyType,
 	newId,
 } from "./types";
+import { formatDate } from "./dateParser";
 import {
 	ensureFolder,
 	filesInFolder,
@@ -546,6 +547,65 @@ export class ObjectTypeManager {
 	}
 
 	/**
+	 * Create a daily note, processing the Daily Notes template file (if one is
+	 * configured) and then stamping the managed type's properties on top.
+	 *
+	 * Template variables supported: `{{date}}`, `{{date:FORMAT}}`, `{{time}}`,
+	 * `{{time:FORMAT}}`, `{{title}}`. FORMAT uses the same Moment-style tokens
+	 * as the Daily Notes filename format (YYYY, MM, DD, HH, mm, etc.).
+	 *
+	 * When no template is configured the method falls back to the standard
+	 * `createObjectNote` path (frontmatter only).
+	 */
+	async createDailyNote(
+		type: ObjectTypeDefinition | null,
+		title: string,
+		date: Date,
+		templatePath: string,
+		targetPath: string
+	): Promise<TFile> {
+		const templateContent = await this.readAndProcessTemplate(
+			templatePath,
+			title,
+			date
+		);
+
+		if (templateContent === null) {
+			// No usable template — fall back to the standard frontmatter-only path.
+			if (type) return this.createObjectNote(type, title);
+			this.pluginManagedPaths.add(targetPath);
+			return this.app.vault.create(targetPath, "");
+		}
+
+		// Create the file with the processed template content.
+		if (type) await ensureFolder(this.app.vault, type.folderPath);
+		this.pluginManagedPaths.add(targetPath);
+		const file = await this.app.vault.create(targetPath, templateContent);
+
+		// Stamp the type's properties without overwriting anything the template
+		// already defined (stampObjectType uses processFrontMatter which only
+		// adds missing keys).
+		if (type) await this.stampObjectType(file, type);
+
+		return file;
+	}
+
+	/** Read a template vault file and substitute daily-note template variables. */
+	private async readAndProcessTemplate(
+		templatePath: string,
+		title: string,
+		date: Date
+	): Promise<string | null> {
+		if (!templatePath.trim()) return null;
+		const tFile = this.app.vault.getAbstractFileByPath(
+			normalizePath(templatePath.trim())
+		);
+		if (!(tFile instanceof TFile)) return null;
+		const raw = await this.app.vault.read(tFile);
+		return applyDailyNoteTemplateVars(raw, title, date);
+	}
+
+	/**
 	 * Stamp an object type's template onto an existing note in-place. Unlike
 	 * `changeObjectType`, this never moves the file — it just ensures the type
 	 * identifier and any missing default properties are written into the
@@ -1004,4 +1064,32 @@ function currentLocalDatetime(): string {
 	const h = String(d.getHours()).padStart(2, "0");
 	const min = String(d.getMinutes()).padStart(2, "0");
 	return `${y}-${mo}-${day}T${h}:${min}`;
+}
+
+
+/**
+ * Substitute daily-note template variables in a template file's raw content.
+ *
+ * Handles the same variable syntax as the core Daily Notes plugin and the
+ * Calendar plugin:
+ *   {{date}}            → date formatted with YYYY-MM-DD
+ *   {{date:FORMAT}}     → date formatted with FORMAT (Moment-style tokens)
+ *   {{time}}            → current time as HH:mm
+ *   {{time:FORMAT}}     → current time formatted with FORMAT
+ *   {{title}}           → note filename (without extension)
+ */
+function applyDailyNoteTemplateVars(
+	content: string,
+	title: string,
+	date: Date
+): string {
+	const now = new Date();
+	return content
+		.replace(/\{\{date(?::([^}]*))?\}\}/gi, (_, fmt) =>
+			formatDate(date, fmt?.trim() || "YYYY-MM-DD")
+		)
+		.replace(/\{\{time(?::([^}]*))?\}\}/gi, (_, fmt) =>
+			formatDate(now, fmt?.trim() || "HH:mm")
+		)
+		.replace(/\{\{title\}\}/gi, title);
 }
