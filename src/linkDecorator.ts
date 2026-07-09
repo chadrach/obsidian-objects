@@ -76,6 +76,7 @@ export class LinkDecorator {
 		this.decorateRenderedLinks();
 		this.decoratePillsAndLinkWrappers();
 		this.decorateBasesFileNames();
+		this.decorateSearchResultTitles();
 		this.decorateTabHeaders();
 	}
 
@@ -193,6 +194,34 @@ export class LinkDecorator {
 		if (!(dest instanceof TFile)) return;
 		const type = this.manager.getTypeForPath(dest.path);
 		this.applyIcon(pill, type?.icon ?? null, "link");
+	}
+
+	/**
+	 * Decorate the source-file title row in backlink and search result panels.
+	 *
+	 * Both the native Backlinks panel and the Better Search Views plugin render
+	 * source file headings as `.search-result-file-title .tree-item-inner`
+	 * plain text — no anchor and no data-href attribute. We look up the file
+	 * by display name (the text content) and prepend the type icon when it
+	 * belongs to a registered object type.
+	 *
+	 * The matched-content snippets inside each result are not handled here:
+	 * BSV renders them as real `<a class="internal-link">` links covered by
+	 * `decorateRenderedLinks`; the native panel shows raw `[[wikilink]]` text
+	 * that cannot be decorated without a full markdown parser.
+	 */
+	private decorateSearchResultTitles(): void {
+		const root = this.app.workspace.containerEl;
+		root.querySelectorAll(
+			".search-result-file-title .tree-item-inner"
+		).forEach((el) => {
+			const title = el.textContent?.trim();
+			if (!title) return;
+			const dest = this.app.metadataCache.getFirstLinkpathDest(title, "");
+			if (!(dest instanceof TFile)) return;
+			const type = this.manager.getTypeForPath(dest.path);
+			this.applyIcon(el as HTMLElement, type?.icon ?? null, "link");
+		});
 	}
 
 	/**
