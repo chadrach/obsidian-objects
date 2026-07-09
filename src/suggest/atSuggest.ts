@@ -174,15 +174,19 @@ export class AtSuggest extends EditorSuggest<Suggestion> {
 			scopeType,
 			10
 		);
-		for (const n of notes) {
-			suggestions.push({
-				kind: "note",
-				file: n.file,
-				type: n.type,
-			});
-		}
+		const noteSuggestions = notes.map((n) => ({
+			kind: "note" as const,
+			file: n.file,
+			type: n.type,
+		}));
 
 		// --- Type rows ---------------------------------------------------
+		// Build type matches independently so we can decide their position:
+		// when the query is non-empty and matches at least one type name,
+		// types appear before notes (the user is clearly looking for a type).
+		// When the query is empty, types trail notes so the list opens with
+		// recent notes rather than a wall of type filters.
+		const typeSuggestions: Extract<Suggestion, { kind: "type" }>[] = [];
 		if (!filter && !implicitType) {
 			const qLower = query.toLowerCase();
 			for (const t of this.manager.getTypes()) {
@@ -192,13 +196,20 @@ export class AtSuggest extends EditorSuggest<Suggestion> {
 					t.name.toLowerCase().includes(qLower) ||
 					t.pluralName.toLowerCase().includes(qLower)
 				) {
-					suggestions.push({
+					typeSuggestions.push({
 						kind: "type",
 						type: t,
 						label: t.pluralName,
 					});
 				}
 			}
+		}
+
+		const typesMatchQuery = query.length > 0 && typeSuggestions.length > 0;
+		if (typesMatchQuery) {
+			suggestions.push(...typeSuggestions, ...noteSuggestions);
+		} else {
+			suggestions.push(...noteSuggestions, ...typeSuggestions);
 		}
 
 		// --- Create-new row ---------------------------------------------
