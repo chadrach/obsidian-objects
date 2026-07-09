@@ -35,7 +35,7 @@ export class LinkDecorator {
 		if (!this.manager.getSettings().showLinkIcons) return;
 		const links = el.querySelectorAll("a.internal-link");
 		links.forEach((anchor) => {
-			this.decorateAnchor(anchor as HTMLAnchorElement, ctx.sourcePath);
+			this.decorateAnchor(anchor as HTMLElement, ctx.sourcePath);
 		});
 	};
 
@@ -75,6 +75,7 @@ export class LinkDecorator {
 		this.decorateFileExplorer();
 		this.decorateRenderedLinks();
 		this.decoratePillsAndLinkWrappers();
+		this.decorateBasesFileNames();
 		this.decorateTabHeaders();
 	}
 
@@ -130,11 +131,33 @@ export class LinkDecorator {
 		// Reading mode, live-preview body, and any other rendered anchor.
 		// `a[data-href]` catches Obsidian internal links that don't always
 		// carry the `internal-link` class (e.g. Properties editor chips).
-		root.querySelectorAll("a.internal-link, a[data-href]").forEach(
-			(anchor) => {
-				this.decorateAnchor(anchor as HTMLAnchorElement, "");
-			}
-		);
+		// Bases table/list views render the file.name cell as a <span> with
+		// class `internal-link` and `data-href` (not an <a>), so we include
+		// the span variant here too.
+		root.querySelectorAll(
+			"a.internal-link, a[data-href], span.internal-link[data-href]"
+		).forEach((el) => {
+			this.decorateAnchor(el as HTMLElement, "");
+		});
+	}
+
+	/**
+	 * Bases card view renders the file.name title as a plain <div> with no
+	 * path attribute — just display text. We resolve the file by its name via
+	 * metadataCache and prepend the type icon to the title line.
+	 */
+	private decorateBasesFileNames(): void {
+		const root = this.app.workspace.containerEl;
+		root.querySelectorAll(
+			".bases-cards-property.mod-title .bases-cards-line.bases-rendered-value"
+		).forEach((el) => {
+			const title = el.textContent?.trim();
+			if (!title) return;
+			const dest = this.app.metadataCache.getFirstLinkpathDest(title, "");
+			if (!(dest instanceof TFile)) return;
+			const type = this.manager.getTypeForPath(dest.path);
+			this.applyIcon(el as HTMLElement, type?.icon ?? null, "link");
+		});
 	}
 
 	/**
@@ -154,7 +177,7 @@ export class LinkDecorator {
 		root.querySelectorAll(
 			".metadata-link-inner, .metadata-link a"
 		).forEach((el) => {
-			this.decorateAnchor(el as HTMLAnchorElement, "");
+			this.decorateAnchor(el as HTMLElement, "");
 		});
 	}
 
@@ -195,19 +218,21 @@ export class LinkDecorator {
 		}
 	}
 
-	private decorateAnchor(
-		anchor: HTMLAnchorElement,
-		sourcePath: string
-	): void {
-		const href = anchor.getAttribute("data-href") ?? anchor.getAttribute("href");
+	private decorateAnchor(el: HTMLElement, sourcePath: string): void {
+		const href = el.getAttribute("data-href") ?? el.getAttribute("href");
 		if (!href) return;
-		const dest = this.app.metadataCache.getFirstLinkpathDest(
-			href,
-			sourcePath
-		);
+		// metadataCache.getFirstLinkpathDest expects wikilink-style paths
+		// (no extension). Bases table cells set data-href to the full vault
+		// path including ".md", so fall back to a direct vault lookup when
+		// the metadata cache returns nothing.
+		let dest = this.app.metadataCache.getFirstLinkpathDest(href, sourcePath);
+		if (!(dest instanceof TFile)) {
+			const byPath = this.app.vault.getAbstractFileByPath(href);
+			if (byPath instanceof TFile) dest = byPath;
+		}
 		if (!(dest instanceof TFile)) return;
 		const type = this.manager.getTypeForPath(dest.path);
-		this.applyIcon(anchor, type?.icon ?? null, "link");
+		this.applyIcon(el, type?.icon ?? null, "link");
 	}
 
 	private applyIcon(
