@@ -111,6 +111,12 @@ export interface PluginSettings {
 	parseNaturalLanguageDates: boolean;
 	/** If true, register Daily Notes as a managed object type. */
 	registerDailyNotes: boolean;
+	/**
+	 * If true, show a prompt when a markdown note is created or moved into a
+	 * typed folder offering to apply the type's template (properties, tags,
+	 * aliases, H1 title). Disabling this suppresses the prompt entirely.
+	 */
+	autoApplyOnMove: boolean;
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
@@ -120,6 +126,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	folderClickOpensBase: true,
 	parseNaturalLanguageDates: true,
 	registerDailyNotes: true,
+	autoApplyOnMove: true,
 };
 
 export const DEFAULT_DATA: ObjectsPluginData = {

@@ -110,6 +110,21 @@ export class ObjectsSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
+			.setName("Prompt to apply type template on move")
+			.setDesc(
+				"When a note is created or moved into a typed folder, show a prompt offering to apply that type's template (properties, tags, H1 title, etc.). Disable to suppress the prompt entirely."
+			)
+			.addToggle((t) =>
+				t
+					.setValue(settings.autoApplyOnMove ?? true)
+					.onChange(async (v) => {
+						await this.plugin.manager.updateSettings({
+							autoApplyOnMove: v,
+						});
+					})
+			);
+
+		new Setting(containerEl)
 			.setName("Object types")
 			.setDesc(
 				"Open the Object Type Settings modal to create, edit and repair types."

@@ -413,6 +413,7 @@ export default class ObjectsPlugin extends Plugin {
 	 * rename rather than a cross-folder move.
 	 */
 	private scheduleAutoApplyCheck(file: TFile, oldPath?: string): void {
+		if (!this.manager.getSettings().autoApplyOnMove) return;
 		if (file.extension !== "md") return;
 
 		// Skip creates/renames initiated by the plugin itself (createObjectNote,
