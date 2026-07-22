@@ -183,6 +183,15 @@ export class LinkDecorator {
 	}
 
 	private decoratePill(pill: HTMLElement): void {
+		// Tags and aliases render as the same .multi-select-pill element as
+		// links. Skip pills that live inside a tags or aliases property so a
+		// tag that shares its name with a note doesn't get a type icon.
+		const propKey = pill
+			.closest(".metadata-property")
+			?.getAttribute("data-property-key")
+			?.toLowerCase();
+		if (propKey === "tags" || propKey === "aliases") return;
+
 		const value =
 			pill.getAttribute("data-value") ??
 			pill
@@ -190,6 +199,9 @@ export class LinkDecorator {
 				?.textContent?.trim() ??
 			pill.textContent?.trim();
 		if (!value) return;
+		// A leading "#" also indicates a tag value — skip it regardless of
+		// which property key it lives under.
+		if (value.startsWith("#")) return;
 		const dest = this.app.metadataCache.getFirstLinkpathDest(value, "");
 		if (!(dest instanceof TFile)) return;
 		const type = this.manager.getTypeForPath(dest.path);
