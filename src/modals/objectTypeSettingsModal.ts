@@ -461,6 +461,18 @@ export class ObjectTypeSettingsModal extends Modal {
 					})
 			);
 
+		new Setting(this.contentEl)
+			.setName("Description")
+			.setDesc("Your description for this object type.")
+			.addTextArea((t) =>
+				t
+					.setValue(draft.description)
+					.setPlaceholder("Optional description…")
+					.onChange((v) => {
+						draft.description = v;
+					})
+			);
+
 		this.contentEl.createEl("h3", { text: "Properties" });
 		propsEl = this.contentEl.createDiv({
 			cls: "obsidian-objects-props",
@@ -1052,6 +1064,7 @@ export class ObjectTypeSettingsModal extends Modal {
 					showAliases: draft.showAliases ?? false,
 					addH1Title: draft.addH1Title ?? false,
 					extendToSubfolders: draft.extendToSubfolders ?? false,
+					description: draft.description,
 				},
 				{ removeDeletedFromNotes: removeFromNotes, typePropertyAction }
 			);
@@ -1099,6 +1112,7 @@ export class ObjectTypeSettingsModal extends Modal {
 					showAliases: draft.showAliases ?? false,
 					addH1Title: draft.addH1Title ?? false,
 					extendToSubfolders: draft.extendToSubfolders ?? false,
+					description: draft.description,
 				});
 			} catch (err) {
 				new Notice(String(err));
@@ -1131,6 +1145,7 @@ interface TypeDraft {
 	showAliases?: boolean;
 	addH1Title?: boolean;
 	extendToSubfolders?: boolean;
+	description: string;
 }
 
 function blankDraft(initialFolderPath = ""): TypeDraft {
@@ -1155,6 +1170,7 @@ function blankDraft(initialFolderPath = ""): TypeDraft {
 		showAliases: false,
 		addH1Title: false,
 		extendToSubfolders: false,
+		description: "",
 	};
 }
 
@@ -1172,6 +1188,7 @@ function draftFromType(type: ObjectTypeDefinition): TypeDraft {
 		showAliases: type.showAliases ?? false,
 		addH1Title: type.addH1Title ?? false,
 		extendToSubfolders: type.extendToSubfolders ?? false,
+		description: type.description ?? "",
 	};
 }
 

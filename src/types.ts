@@ -90,6 +90,8 @@ export interface ObjectTypeDefinition {
 	 * directly inside `folderPath` are matched.
 	 */
 	extendToSubfolders?: boolean;
+	/** Optional freeform description shown in the settings UI. */
+	description?: string;
 }
 
 export interface ObjectsPluginData {

@@ -155,6 +155,7 @@ export class ObjectTypeManager {
 		showTypeProperty?: boolean;
 		addH1Title?: boolean;
 		extendToSubfolders?: boolean;
+		description?: string;
 	}): Promise<ObjectTypeDefinition> {
 		const folderPath = normalizePath(input.folderPath);
 		if (this.getTypeByFolder(folderPath)) {
@@ -177,6 +178,7 @@ export class ObjectTypeManager {
 			showTypeProperty: input.showTypeProperty ?? false,
 			addH1Title: input.addH1Title ?? false,
 			extendToSubfolders: input.extendToSubfolders ?? false,
+			description: input.description ?? "",
 			managed: input.managed ?? null,
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
@@ -209,6 +211,7 @@ export class ObjectTypeManager {
 				| "showTypeProperty"
 				| "addH1Title"
 				| "extendToSubfolders"
+				| "description"
 			>
 		>,
 		options: {
@@ -238,6 +241,7 @@ export class ObjectTypeManager {
 		if (patch.addH1Title !== undefined) type.addH1Title = patch.addH1Title;
 		if (patch.extendToSubfolders !== undefined)
 			type.extendToSubfolders = patch.extendToSubfolders;
+		if (patch.description !== undefined) type.description = patch.description;
 		type.updatedAt = Date.now();
 
 		// When pluralName changes, basePath must be recomputed and the old
