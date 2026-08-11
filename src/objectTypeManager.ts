@@ -222,6 +222,8 @@ export class ObjectTypeManager {
 		if (!type) throw new Error(`Unknown type id ${id}`);
 
 		const prevProperties = [...type.properties];
+		const prevPluralName = type.pluralName;
+		const prevBasePath = type.basePath;
 
 		if (patch.name !== undefined) type.name = patch.name;
 		if (patch.pluralName !== undefined) type.pluralName = patch.pluralName;
@@ -237,6 +239,34 @@ export class ObjectTypeManager {
 		if (patch.extendToSubfolders !== undefined)
 			type.extendToSubfolders = patch.extendToSubfolders;
 		type.updatedAt = Date.now();
+
+		// When pluralName changes, basePath must be recomputed and the old
+		// .base file renamed to match. (moveType handles this for folder moves,
+		// but a name-only change goes through updateType alone.)
+		if (
+			patch.pluralName !== undefined &&
+			patch.pluralName !== prevPluralName
+		) {
+			const newBasePath = basePathFor(type.folderPath, type.pluralName);
+			if (newBasePath !== prevBasePath) {
+				type.basePath = newBasePath;
+				const oldBase =
+					this.app.vault.getAbstractFileByPath(prevBasePath);
+				if (oldBase instanceof TFile) {
+					try {
+						await this.app.fileManager.renameFile(
+							oldBase,
+							newBasePath
+						);
+					} catch (err) {
+						console.warn(
+							"Could not rename .base file after plural name change",
+							err
+						);
+					}
+				}
+			}
+		}
 
 		let mutation: PropertyMutation | undefined;
 		if (patch.properties !== undefined) {
