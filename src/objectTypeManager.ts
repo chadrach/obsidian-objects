@@ -630,13 +630,37 @@ export class ObjectTypeManager {
 		title: string,
 		date: Date
 	): Promise<string | null> {
-		if (!templatePath.trim()) return null;
-		const tFile = this.app.vault.getAbstractFileByPath(
-			normalizePath(templatePath.trim())
-		);
+		const trimmed = templatePath.trim();
+		if (!trimmed) return null;
+		const tFile = this.resolveTemplateFile(trimmed);
 		if (!(tFile instanceof TFile)) return null;
 		const raw = await this.app.vault.read(tFile);
 		return applyDailyNoteTemplateVars(raw, title, date);
+	}
+
+	/**
+	 * Resolve a template path the way the core Daily Notes / Templates
+	 * plugins do: the stored `template` option is a linktext (chosen via the
+	 * file suggester) that omits the `.md` extension, not a literal vault
+	 * path. `getFirstLinkpathDest` handles that resolution; fall back to a
+	 * literal path lookup (with and without `.md`) for callers that do pass
+	 * one.
+	 */
+	private resolveTemplateFile(templatePath: string): TFile | null {
+		const linked = this.app.metadataCache.getFirstLinkpathDest(
+			templatePath,
+			""
+		);
+		if (linked instanceof TFile) return linked;
+		const direct = this.app.vault.getAbstractFileByPath(
+			normalizePath(templatePath)
+		);
+		if (direct instanceof TFile) return direct;
+		const withExt = this.app.vault.getAbstractFileByPath(
+			normalizePath(`${templatePath}.md`)
+		);
+		if (withExt instanceof TFile) return withExt;
+		return null;
 	}
 
 	/**
