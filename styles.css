@@ -148,7 +148,7 @@
 
 .obsidian-objects-prop-row {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr 1fr 24px;
+  grid-template-columns: 20px 2fr 1fr 1fr 1fr 24px;
   gap: 0.4rem;
   align-items: center;
 }
@@ -209,6 +209,31 @@
 
 .obsidian-objects-prop-row__remove:hover {
   color: var(--text-error);
+}
+
+.obsidian-objects-prop-row__reorder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.obsidian-objects-prop-row__reorder-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  line-height: 0.8;
+}
+
+.obsidian-objects-prop-row__reorder-btn:hover:not(:disabled) {
+  color: var(--text-normal);
+}
+
+.obsidian-objects-prop-row__reorder-btn:disabled {
+  color: var(--text-faint);
+  cursor: default;
 }
 
 /* Date / datetime default wrapper — stacks the mode select and the optional

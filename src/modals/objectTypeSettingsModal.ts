@@ -596,9 +596,42 @@ export class ObjectTypeSettingsModal extends Modal {
 				})
 			);
 
-		for (const prop of draft.properties) {
+		draft.properties.forEach((prop, index) => {
 			const row = container.createDiv({
 				cls: "obsidian-objects-prop-row",
+			});
+			const reorderWrap = row.createDiv({
+				cls: "obsidian-objects-prop-row__reorder",
+			});
+			const upBtn = reorderWrap.createEl("button", {
+				cls: "obsidian-objects-prop-row__reorder-btn",
+			});
+			setIcon(upBtn, "chevron-up");
+			upBtn.setAttribute("aria-label", "Move up");
+			upBtn.disabled = index === 0;
+			upBtn.addEventListener("click", () => {
+				if (index === 0) return;
+				const props = draft.properties;
+				[props[index - 1], props[index]] = [
+					props[index],
+					props[index - 1],
+				];
+				this.renderProperties(draft, container);
+			});
+			const downBtn = reorderWrap.createEl("button", {
+				cls: "obsidian-objects-prop-row__reorder-btn",
+			});
+			setIcon(downBtn, "chevron-down");
+			downBtn.setAttribute("aria-label", "Move down");
+			downBtn.disabled = index === draft.properties.length - 1;
+			downBtn.addEventListener("click", () => {
+				if (index === draft.properties.length - 1) return;
+				const props = draft.properties;
+				[props[index], props[index + 1]] = [
+					props[index + 1],
+					props[index],
+				];
+				this.renderProperties(draft, container);
 			});
 			// Wrap name input so we can overlay the collision warning icon.
 			const nameWrap = row.createDiv({
@@ -732,9 +765,10 @@ export class ObjectTypeSettingsModal extends Modal {
 				});
 				// Self-links are allowed — e.g. a Person type can have a
 				// "Family" property that points back at Person — so we don't
-				// exclude the type being edited from the dropdown.
+				// exclude the type being edited from the dropdown. Daily
+				// Notes is a valid link target too (e.g. a "Meeting" type
+				// with a "Date" property linked to Daily Notes).
 				for (const t of this.manager.getTypes()) {
-					if (t.managed === "daily-notes") continue;
 					const label =
 						t.id === draft.existingId
 							? `${t.name} (this type)`
@@ -841,7 +875,7 @@ export class ObjectTypeSettingsModal extends Modal {
 				);
 				this.renderProperties(draft, container);
 			});
-		}
+		});
 
 		const addBtn = container.createEl("button", {
 			text: "+ Add property",
